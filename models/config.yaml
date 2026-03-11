@@ -1,0 +1,4 @@
+# Open-source model endpoint template
+endpoint: http://localhost:8000/v1
+model: llama-3
+api_key: ""
