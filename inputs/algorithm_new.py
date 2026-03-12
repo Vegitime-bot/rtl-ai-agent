@@ -1,4 +1,4 @@
-def aes_round(state):
+def aes_round(state, round_index):
     state = sub_bytes(state)
     state = shift_rows(state)
     if round_index < 5:

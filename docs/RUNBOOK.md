@@ -23,39 +23,44 @@
 모든 산출물은 `build/`에 저장됩니다.
 
 ```bash
-python scripts/parse_rtl.py data/rtl build/rtl_ast.json
-python scripts/diff_pseudo.py data/pseudo_old.py data/pseudo_new.py build/pseudo_diff.json
-python scripts/chunk_ma.py data/ma_doc.md build/ma_chunks.json
+python scripts/parse_rtl.py inputs build/rtl_ast.json
+python scripts/diff_pseudo.py inputs/algorithm_origin.py inputs/algorithm_new.py build/pseudo_diff.json
+python scripts/chunk_ma.py inputs/uArch_origin.txt build/uarch_origin.json
+python scripts/chunk_ma.py inputs/uArch_new.txt build/uarch_new.json
 python scripts/build_graph.py build/rtl_ast.json build/causal_graph.json
 python rag/ingest.py --db build/rag.db \
-  build/rtl_ast.json build/pseudo_diff.json build/ma_chunks.json build/causal_graph.json
+  build/rtl_ast.json build/pseudo_diff.json build/uarch_origin.json build/uarch_new.json build/causal_graph.json
 ```
 
 ## 3. 오케스트레이터 실행
-- **LLM 없이**
+- **LLM 없이 분석만**
   ```bash
   python orchestrator/flow.py --ip AES --db build/rag.db
   ```
-- **OpenAI-Compatible 엔드포인트 사용 시**
-  1. `models/config.yaml` 편집 또는 `MODEL_API_KEY` 환경변수 지정
-  2. 실행
-     ```bash
-     python orchestrator/flow.py --ip AES --db build/rag.db --model-config models/config.yaml
-     ```
+- **LLM 연동 (요약만)**
+  ```bash
+  python orchestrator/flow.py --ip AES --db build/rag.db --model-config models/config.yaml
+  ```
+- **RTL 생성 + 검증까지**
+  ```bash
+  python orchestrator/flow.py --ip AES --db build/rag.db \
+    --model-config models/config.yaml --generate-rtl --output-rtl outputs/new.v
+  ```
 
-결과물: `outputs/analysis.md`, `outputs/bundle.json`
+결과물: `outputs/analysis.md`, `outputs/bundle.json`, `outputs/new.v`(선택)
 
-## 4. 입력 데이터 교체
+## 4. 입력 파일 교체
 | 유형 | 위치 | 교체 후 실행해야 할 스크립트 |
 | --- | --- | --- |
-| RTL | `data/rtl/*.sv` | `parse_rtl.py`, `build_graph.py`, `rag/ingest.py` |
-| Pseudo | `data/pseudo_old.py`, `data/pseudo_new.py` | `diff_pseudo.py`, `rag/ingest.py` |
-| MA 문서 | `data/ma_doc.md` (또는 추가 파일) | `chunk_ma.py`, `rag/ingest.py` |
+| RTL | `inputs/origin.v` | `parse_rtl.py`, `build_graph.py`, `rag/ingest.py` |
+| Pseudo | `inputs/algorithm_origin.py`, `inputs/algorithm_new.py` | `diff_pseudo.py`, `rag/ingest.py` |
+| Micro-Architecture 문서 | `inputs/uArch_origin.txt`, `inputs/uArch_new.txt` | 각각 `chunk_ma.py`, `rag/ingest.py` |
 
 ## 5. 로그 & 산출물
 - `build/rtl_ast.json` : 모듈/포트/신호/할당 정보
 - `build/causal_graph.json` : 신호 간 causal edge 리스트
-- `outputs/analysis.md` : Spec findings + Action plan + LLM summary(선택)
+- `outputs/analysis.md` : Spec findings + Action plan + LLM summary
+- `outputs/new.v` : LLM이 생성한 RTL(선택)
 - `outputs/bundle.json` : 전체 결과를 JSON으로 묶은 파일
 
 ## 6. 문제 해결 체크리스트

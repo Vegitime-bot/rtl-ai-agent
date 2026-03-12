@@ -21,11 +21,13 @@ pip install -r requirements.txt
 ## 3. 샘플 데이터 인제스트
 
 ```bash
-python scripts/parse_rtl.py data/rtl build/rtl_ast.json
-python scripts/diff_pseudo.py data/pseudo_old.py data/pseudo_new.py build/pseudo_diff.json
-python scripts/chunk_ma.py data/ma_doc.md build/ma_chunks.json
+python scripts/parse_rtl.py inputs build/rtl_ast.json
+python scripts/diff_pseudo.py inputs/algorithm_origin.py inputs/algorithm_new.py build/pseudo_diff.json
+python scripts/chunk_ma.py inputs/uArch_origin.txt build/uarch_origin.json
+python scripts/chunk_ma.py inputs/uArch_new.txt build/uarch_new.json
 python scripts/build_graph.py build/rtl_ast.json build/causal_graph.json
-python rag/ingest.py --db build/rag.db build/rtl_ast.json build/pseudo_diff.json build/ma_chunks.json build/causal_graph.json
+python rag/ingest.py --db build/rag.db \
+  build/rtl_ast.json build/pseudo_diff.json build/uarch_origin.json build/uarch_new.json build/causal_graph.json
 ```
 
 ## 4. 번들 생성 & 오케스트레이션 실행
@@ -51,27 +53,35 @@ python orchestrator/flow.py --ip demo --db build/rag.db
    python orchestrator/flow.py --ip demo --db build/rag.db --model-config models/config.yaml
    ```
    → 보고서 마지막에 LLM 요약 섹션이 추가됨.
+4. **RTL 생성 및 검증까지 수행하려면**
+   ```bash
+   python orchestrator/flow.py --ip demo --db build/rag.db \
+     --model-config models/config.yaml --generate-rtl --output-rtl outputs/new.v
+   ```
+   - `outputs/new.v`가 생성되며, 기본 검증 결과가 콘솔/`bundle.json`에 기록됨.
 
 ## 6. 입력 파일 커스터마이즈
 
-- **RTL**: `data/rtl/*.sv`에 원하는 모듈을 추가하고 `parse_rtl.py`를 다시 실행.
-- **Pseudo**: `data/pseudo_old.py`, `data/pseudo_new.py` 교체 → diff 스크립트 실행.
-- **Micro-Architecture 문서**: `data/ma_doc.md` 교체(또는 여러 파일 추가) 후 chunk 스크립트 실행.
-- 새로 생성된 JSON을 다시 `rag/ingest.py`에 넣으면 파이프라인이 최신 데이터 기준으로 동작.
+| 유형 | 위치 | 교체 후 실행해야 할 스크립트 |
+| --- | --- | --- |
+| RTL | `inputs/origin.v` | `parse_rtl.py`, `build_graph.py`, `rag/ingest.py` |
+| Pseudo | `inputs/algorithm_origin.py`, `inputs/algorithm_new.py` | `diff_pseudo.py`, `rag/ingest.py` |
+| MA 문서 | `inputs/uArch_origin.txt`, `inputs/uArch_new.txt` | 각각 `chunk_ma.py`, `rag/ingest.py` |
 
 ## 7. 구조
 
 ```
-├── data/                # 샘플 RTL/pseudo/문서
-├── scripts/             # 인제스트 스크립트
-├── rag/                 # 간단한 벡터스토어 대체(SQLite)
-├── orchestrator/        # 파이프라인 + 에이전트 스텁
-├── models/              # 모델 설정 템플릿
-├── build/               # 생성되는 산출물 (git ignore)
-└── outputs/             # 리포트 출력 (git ignore)
+├── inputs/             # origin.v + uArch/algorithm 원본/신규
+├── scripts/            # 인제스트 + 그래프 빌더
+├── rag/                # 간단한 SQLite 기반 RAG
+├── orchestrator/       # 플로우, 코드 생성, 검증
+├── models/             # 모델 설정 템플릿
+├── docs/               # Runbook 등 문서
+├── build/              # 생성되는 산출물 (git ignore)
+└── outputs/            # 리포트/신규 RTL (git ignore)
 ```
 
-## 7. 다음 단계 아이디어
+## 8. 다음 단계 아이디어
 - 실제 RTL 파서(Surelog) 연동
 - 오픈소스 LLM(vLLM + Llama 3 등) 엔드포인트 연결
 - 시뮬레이터/ formal 도구 CLI 래퍼 추가

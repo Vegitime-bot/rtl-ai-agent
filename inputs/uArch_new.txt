@@ -1,0 +1,4 @@
+# Micro-architecture (new)
+- Skip MixColumns for rounds >=5 to save power.
+- Insert masking stage before output register.
+- Latency target remains 12 cycles.

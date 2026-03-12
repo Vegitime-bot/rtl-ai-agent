@@ -70,7 +70,8 @@ def main() -> None:
     args = parser.parse_args()
 
     data = []
-    for path in sorted(args.rtl_dir.glob("*.sv")):
+    files = list(args.rtl_dir.glob("*.sv")) + list(args.rtl_dir.glob("*.v"))
+    for path in sorted(files):
         data.extend(parse_file(path))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

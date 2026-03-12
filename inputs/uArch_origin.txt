@@ -1,0 +1,4 @@
+# Micro-architecture (origin)
+- AES core executes MixColumns on every round.
+- No masking stage.
+- Total latency 12 cycles.
