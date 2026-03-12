@@ -69,4 +69,10 @@ python rag/ingest.py --db build/rag.db \
 3. **새 데이터 반영 안 됨** → 인제스트 파이프라인 전체(2단계) 재실행
 4. **경로 문제** → 모든 명령은 레포 루트(`rtl-ai-agent/`)에서 실행
 
+## 7. LSP 서버 (옵션)
+```bash
+python -m lsp.rtl_ai_server
+```
+- stdio 모드로 실행되며, IDE에서 hover/context 정보를 요청할 수 있다.
+
 이 Runbook을 Claude Code 내부에 그대로 복사해 두면, 추가 지시 없이 재현할 수 있습니다.

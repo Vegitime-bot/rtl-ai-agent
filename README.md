@@ -81,7 +81,18 @@ python orchestrator/flow.py --ip demo --db build/rag.db
 └── outputs/            # 리포트/신규 RTL (git ignore)
 ```
 
-## 8. 다음 단계 아이디어
+## 8. LSP 서버 (실험)
+
+분석/그래프 정보를 IDE에서 바로 조회할 수 있도록 간단한 LSP 서버를 추가했습니다.
+
+```bash
+python -m lsp.rtl_ai_server  # stdio 모드로 실행
+```
+
+- VS Code 등에서 `stdio` 기반 커맨드로 연결하거나, Claude Code MCP와 연동해 메타데이터를 조회할 수 있습니다.
+- `hover`에서는 신호 타입/폭을, `rtl-ai/getContext` 명령에서는 연결된 causal edge 목록을 받을 수 있습니다.
+
+## 9. 다음 단계 아이디어
 - 실제 RTL 파서(Surelog) 연동
 - 오픈소스 LLM(vLLM + Llama 3 등) 엔드포인트 연결
 - 시뮬레이터/ formal 도구 CLI 래퍼 추가
