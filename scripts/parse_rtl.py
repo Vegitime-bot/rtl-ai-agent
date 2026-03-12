@@ -7,8 +7,20 @@ import json
 import re
 from pathlib import Path
 
-MODULE_RE = re.compile(r"module\s+(?P<name>\w+)\s*\((?P<ports>.*?)\);", re.S)
+MODULE_RE = re.compile(r"module\s+(?P<name>\w+)\s*\((?P<ports>.*?)\);(?P<body>.*?)endmodule", re.S)
 PORT_RE = re.compile(r"(input|output|inout)\s+(?:logic|wire|reg)?\s*(\[[^\]]+\])?\s*(\w+)")
+DECL_RE = re.compile(r"(logic|wire|reg)\s*(\[[^\]]+\])?\s*(\w+)")
+ASSIGN_RE = re.compile(r"(assign\s+)?(\w+)\s*(<=|=)\s*([^;]+);")
+IDENT_RE = re.compile(r"[A-Za-z_][\w$]*")
+RESERVED = {"if", "else", "begin", "end", "posedge", "negedge", "module", "assign", "always"}
+
+
+def extract_tokens(expr: str) -> list[str]:
+    tokens = []
+    for tok in IDENT_RE.findall(expr):
+        if tok not in RESERVED:
+            tokens.append(tok)
+    return tokens
 
 
 def parse_file(path: Path) -> list[dict]:
@@ -16,6 +28,7 @@ def parse_file(path: Path) -> list[dict]:
     modules = []
     for match in MODULE_RE.finditer(text):
         ports_text = match.group("ports")
+        body = match.group("body")
         ports = []
         for kind, width, name in PORT_RE.findall(ports_text):
             ports.append({
@@ -23,10 +36,29 @@ def parse_file(path: Path) -> list[dict]:
                 "name": name,
                 "width": width or "1"
             })
+        signals = []
+        for dtype, width, name in DECL_RE.findall(body):
+            signals.append({
+                "name": name,
+                "width": width or "1",
+                "type": dtype,
+            })
+        assignments = []
+        for match_assign in ASSIGN_RE.finditer(body):
+            is_continuous = bool(match_assign.group(1))
+            lhs = match_assign.group(2)
+            rhs = match_assign.group(4)
+            assignments.append({
+                "lhs": lhs,
+                "rhs": extract_tokens(rhs),
+                "kind": "assign" if is_continuous else "always",
+            })
         modules.append({
             "module": match.group("name"),
             "file": str(path),
-            "ports": ports
+            "ports": ports,
+            "signals": signals,
+            "assignments": assignments,
         })
     return modules
 

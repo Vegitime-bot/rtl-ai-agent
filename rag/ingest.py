@@ -29,6 +29,9 @@ def load_json(path: Path) -> list[tuple[str, str, str, str]]:
     elif "sections" in data:
         for section in data["sections"]:
             rows.append(("ma", section["section"], section["body"], json.dumps(section)))
+    elif "graphs" in data:
+        for graph in data["graphs"]:
+            rows.append(("graph", graph["module"], json.dumps(graph["edges"]), json.dumps(graph)))
     return rows
 
 

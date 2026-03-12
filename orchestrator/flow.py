@@ -29,6 +29,14 @@ def query_chunks(conn: sqlite3.Connection, keyword: str) -> list[dict]:
     return [dict(zip(["kind", "ref", "content"], row)) for row in cur.fetchall()]
 
 
+def summarize_graphs(data: dict) -> list[str]:
+    notes: list[str] = []
+    for graph in data.get("graphs", []):
+        for edge in graph.get("edges", [])[:5]:
+            notes.append(f"{graph['module']}: {edge['from']} -> {edge['to']} ({edge['kind']})")
+    return notes
+
+
 def load_model_config(path: Path | None) -> dict | None:
     if not path:
         return None
@@ -70,11 +78,14 @@ def main() -> None:
     build_dir = Path("build")
     rtl_data = load_json(build_dir / "rtl_ast.json")
     pseudo_diff = load_json(build_dir / "pseudo_diff.json")["diff"]
+    graph_path = build_dir / "causal_graph.json"
+    graph_data = load_json(graph_path) if graph_path.exists() else {"graphs": []}
     conn = sqlite3.connect(args.db)
     ma_chunks = [c for c in query_chunks(conn, args.ip) if c["kind"] == "ma"]
 
     findings = analyze(ma_chunks, "\n".join(pseudo_diff))
-    plan = build_plan(rtl_data.get("modules", []), [f.summary for f in findings])
+    graph_notes = summarize_graphs(graph_data)
+    plan = build_plan(rtl_data.get("modules", []), [f.summary for f in findings], graph_notes)
 
     model_cfg = load_model_config(args.model_config)
     llm_summary = None
@@ -90,6 +101,7 @@ def main() -> None:
     Path("outputs/bundle.json").write_text(json.dumps({
         "findings": [f.__dict__ for f in findings],
         "plan": [p.__dict__ for p in plan],
+        "graph_notes": graph_notes,
         "llm_summary": llm_summary,
     }, indent=2))
     print(f"[flow] report saved to {args.out}")

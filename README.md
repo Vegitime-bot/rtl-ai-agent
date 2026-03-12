@@ -24,7 +24,8 @@ pip install -r requirements.txt
 python scripts/parse_rtl.py data/rtl build/rtl_ast.json
 python scripts/diff_pseudo.py data/pseudo_old.py data/pseudo_new.py build/pseudo_diff.json
 python scripts/chunk_ma.py data/ma_doc.md build/ma_chunks.json
-python rag/ingest.py --db build/rag.db build/rtl_ast.json build/pseudo_diff.json build/ma_chunks.json
+python scripts/build_graph.py build/rtl_ast.json build/causal_graph.json
+python rag/ingest.py --db build/rag.db build/rtl_ast.json build/pseudo_diff.json build/ma_chunks.json build/causal_graph.json
 ```
 
 ## 4. 번들 생성 & 오케스트레이션 실행
