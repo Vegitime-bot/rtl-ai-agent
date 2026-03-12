@@ -1,6 +1,6 @@
 # RTL AI Agent MVP
 
-초기 실험용으로 만든 경량 환경입니다. Debian WSL에서 `git clone` 후 바로 실행해 볼 수 있습니다.
+초기 실험용으로 만든 경량 환경입니다. Debian WSL에서 `git clone` 후 바로 실행해 볼 수 있습니다. 폐쇄망 Claude Code용 절차는 [`docs/RUNBOOK.md`](docs/RUNBOOK.md)를 참고하세요.
 
 ## 1. 준비 사항
 
