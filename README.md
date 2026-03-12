@@ -37,9 +37,28 @@ python orchestrator/flow.py --ip demo --db build/rag.db
 
 ## 5. LLM 연동 (선택)
 
-`models/config.yaml`에 OpenAI-Compatible 엔드포인트를 적으면, `flow.py`가 해당 API를 호출하도록 확장할 수 있습니다. 기본값은 오프라인 모드입니다.
+1. `pip install -r requirements.txt` (requests + PyYAML 포함)  
+2. `models/config.yaml` 수정:
+   ```yaml
+   endpoint: https://your-endpoint/v1
+   model: llama-3
+   api_key: sk-...
+   ```
+   - API 키를 파일에 적기 싫으면 `MODEL_API_KEY` 환경변수로 전달 가능.
+3. 실행 시 `--model-config models/config.yaml` 옵션 추가:
+   ```bash
+   python orchestrator/flow.py --ip demo --db build/rag.db --model-config models/config.yaml
+   ```
+   → 보고서 마지막에 LLM 요약 섹션이 추가됨.
 
-## 6. 구조
+## 6. 입력 파일 커스터마이즈
+
+- **RTL**: `data/rtl/*.sv`에 원하는 모듈을 추가하고 `parse_rtl.py`를 다시 실행.
+- **Pseudo**: `data/pseudo_old.py`, `data/pseudo_new.py` 교체 → diff 스크립트 실행.
+- **Micro-Architecture 문서**: `data/ma_doc.md` 교체(또는 여러 파일 추가) 후 chunk 스크립트 실행.
+- 새로 생성된 JSON을 다시 `rag/ingest.py`에 넣으면 파이프라인이 최신 데이터 기준으로 동작.
+
+## 7. 구조
 
 ```
 ├── data/                # 샘플 RTL/pseudo/문서
