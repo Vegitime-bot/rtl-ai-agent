@@ -1,0 +1,22 @@
+[
+  {
+    "timestamp": "2026-03-15T07:45:00Z",
+    "event": "bootstrap",
+    "detail": "Set up Surelog wrapper script (scripts/run_surelog.py) to capture UHDM binary + JSON outputs in build/."
+  },
+  {
+    "timestamp": "2026-03-15T08:35:00Z",
+    "event": "uhdm-extract-wip",
+    "detail": "Implementing UHDM JSON extractor (scripts/uhdm_extract.py) and progress tracking files."
+  },
+  {
+    "timestamp": "2026-03-15T19:45:00Z",
+    "event": "surelog-wrapper",
+    "detail": "Polished run_surelog.py: schema auto-detect, slpp cleanup toggle, UHDM bin/json export + command logging."
+  },
+  {
+    "timestamp": "2026-03-15T20:25:00Z",
+    "event": "uhdm-graph-pipeline",
+    "detail": "Completed uhdm_extract.py pass + updated build_graph.py to emit causal edges from structured modules."
+  }
+]

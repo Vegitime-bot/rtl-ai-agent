@@ -1,46 +1,55 @@
 #!/usr/bin/env python3
-"""Build a simple causal graph based on assignments."""
+"""Build a causal graph from structured RTL assignments."""
 from __future__ import annotations
 
 import argparse
 import json
-from collections import defaultdict
 from pathlib import Path
+from typing import Dict, List
+
+
+def load_modules(path: Path) -> List[dict]:
+    data = json.loads(path.read_text())
+    return data.get("modules", [])
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("rtl_json", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("rtl_json", type=Path, help="Structured RTL JSON (from uhdm_extract)")
+    parser.add_argument("output", type=Path, help="Graph JSON output")
     args = parser.parse_args()
 
-    rtl = json.loads(args.rtl_json.read_text())
-    graphs = []
-    for module in rtl.get("modules", []):
-        edges = []
-        fan_in = defaultdict(int)
-        for assign in module.get("assignments", []):
-            lhs = assign["lhs"]
-            for token in assign.get("rhs", []):
-                edges.append({"from": token, "to": lhs, "kind": assign.get("kind", "assign")})
-                fan_in[lhs] += 1
+    modules = load_modules(args.rtl_json)
+    graphs: List[Dict] = []
+    for module in modules:
+        edges: List[Dict] = []
+        node_kinds: Dict[str, str] = {}
+        for signal in module.get("signals", []):
+            node_kinds[signal["name"]] = "signal"
+        for port in module.get("ports", []):
+            if port.get("direction") == "input":
+                node_kinds[port["net"] or port["name"]] = "input"
+            elif port.get("direction") == "output":
+                node_kinds[port["net"] or port["name"]] = "output"
+
+        def add_edges(assign_list: List[dict], kind: str) -> None:
+            for assign in assign_list:
+                lhs = assign.get("lhs")
+                if not lhs:
+                    continue
+                for source in assign.get("rhs_signals", []):
+                    edges.append({"from": source, "to": lhs, "kind": kind})
+
+        add_edges(module.get("continuous_assignments", []), "continuous")
+        add_edges(module.get("procedural_assignments", []), "procedural")
         graphs.append({
-            "module": module["module"],
+            "module": module.get("module"),
             "edges": edges,
-            "fan_in": fan_in,
+            "node_kinds": node_kinds,
         })
-    serializable = {
-        "graphs": [
-            {
-                "module": g["module"],
-                "edges": g["edges"],
-                "fan_in": dict(g["fan_in"]),
-            }
-            for g in graphs
-        ]
-    }
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(serializable, indent=2))
+    args.output.write_text(json.dumps({"graphs": graphs}, indent=2))
     print(f"[build_graph] modules: {len(graphs)} -> {args.output}")
 
 

@@ -1,0 +1,6 @@
+[2026-03-15 08:40:12] visiting module demo_aes
+[2026-03-15 08:40:12]   nets: round_cnt, state_reg, clk, rst_n
+[2026-03-15 08:40:12]   continuous assign -> out_block := state_reg
+[2026-03-15 08:40:12] visiting always_ff block @posedge clk
+[2026-03-15 08:40:12]   nonblocking assign lhs=round_cnt rhs=round_cnt+1'b1
+[2026-03-15 08:40:12]   nonblocking assign lhs=state_reg rhs=state_reg ^ 128'h1
