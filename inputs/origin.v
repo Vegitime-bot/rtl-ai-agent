@@ -1,14 +1,5 @@
 // Display Timing Controller (origin) – 1080p60 RGB parallel output
-module tcon_basic #(
-    parameter int H_ACTIVE = 1920,
-    parameter int H_FRONT  = 88,
-    parameter int H_SYNC   = 44,
-    parameter int H_BACK   = 148,
-    parameter int V_ACTIVE = 1080,
-    parameter int V_FRONT  = 4,
-    parameter int V_SYNC   = 5,
-    parameter int V_BACK   = 36
-) (
+module tcon_basic (
     input  logic clk_pixel,
     input  logic rst_n,
     input  logic enable,
@@ -17,6 +8,15 @@ module tcon_basic #(
     output logic de,
     output logic frame_done
 );
+
+  localparam int H_ACTIVE = 1920;
+  localparam int H_FRONT  = 88;
+  localparam int H_SYNC   = 44;
+  localparam int H_BACK   = 148;
+  localparam int V_ACTIVE = 1080;
+  localparam int V_FRONT  = 4;
+  localparam int V_SYNC   = 5;
+  localparam int V_BACK   = 36;
 
   localparam int H_TOTAL = H_ACTIVE + H_FRONT + H_SYNC + H_BACK;
   localparam int V_TOTAL = V_ACTIVE + V_FRONT + V_SYNC + V_BACK;

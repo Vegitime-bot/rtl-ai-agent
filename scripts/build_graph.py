@@ -27,21 +27,27 @@ def main() -> None:
         for signal in module.get("signals", []):
             node_kinds[signal["name"]] = "signal"
         for port in module.get("ports", []):
+            target = port.get("net") or port.get("name")
+            if not target:
+                continue
             if port.get("direction") == "input":
-                node_kinds[port["net"] or port["name"]] = "input"
+                node_kinds[target] = "input"
             elif port.get("direction") == "output":
-                node_kinds[port["net"] or port["name"]] = "output"
+                node_kinds[target] = "output"
 
         def add_edges(assign_list: List[dict], kind: str) -> None:
             for assign in assign_list:
                 lhs = assign.get("lhs")
                 if not lhs:
                     continue
-                for source in assign.get("rhs_signals", []):
+                sources = assign.get("rhs_signals") or assign.get("rhs") or []
+                for source in sources:
                     edges.append({"from": source, "to": lhs, "kind": kind})
 
         add_edges(module.get("continuous_assignments", []), "continuous")
         add_edges(module.get("procedural_assignments", []), "procedural")
+        if module.get("assignments"):
+            add_edges(module.get("assignments"), "inferred")
         graphs.append({
             "module": module.get("module"),
             "edges": edges,
