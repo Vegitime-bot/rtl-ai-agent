@@ -38,6 +38,17 @@ python orchestrator/flow.py --ip demo --db build/rag.db
 
 실행하면 `outputs/` 폴더에 요구사항 분석, 설계 계획, 리포트가 생성됩니다.
 
+### 4-1. 원클릭 데모 실행
+사내 Claude Code 등에서 한 번에 돌리고 싶으면 아래 스크립트를 실행하세요.
+
+```bash
+./scripts/run_demo_pipeline.sh             # 기본 DB 경로 build/rag.db 사용
+./scripts/run_demo_pipeline.sh build/demo.db --model-config models/config.yaml
+```
+
+- 첫 번째 인자는 RAG DB 경로(선택), 이후 인자는 그대로 `orchestrator/flow.py`에 전달됩니다.
+- 종료 후 `outputs/analysis.md`와 bundle 파일을 바로 확인할 수 있습니다.
+
 ## 5. LLM 연동 (선택)
 
 1. `pip install -r requirements.txt` (requests + PyYAML 포함)  
