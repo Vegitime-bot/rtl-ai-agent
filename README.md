@@ -39,11 +39,23 @@ python orchestrator/flow.py --ip demo --db build/rag.db
 실행하면 `outputs/` 폴더에 요구사항 분석, 설계 계획, 리포트가 생성됩니다.
 
 ### 4-1. 원클릭 데모 실행
-사내 Claude Code 등에서 한 번에 돌리고 싶으면 아래 스크립트를 실행하세요.
+사내 Claude Code 등에서 **셋업(1회)**과 **실행(반복)**을 명확히 나눠 사용할 수 있습니다.
 
+**Setup – 최초 1회만**
 ```bash
-./scripts/run_demo_pipeline.sh             # 기본 DB 경로 build/rag.db 사용
-./scripts/run_demo_pipeline.sh build/demo.db --model-config models/config.yaml
+git clone https://github.com/Vegitime-bot/rtl-ai-agent.git
+cd rtl-ai-agent
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Run – 매번 반복할 때**
+```bash
+source .venv/bin/activate          # 새 셸이면 다시 활성화
+./scripts/run_demo_pipeline.sh      # 기본 DB 경로 build/rag.db 사용
+# 또는
+./scripts/run_demo_pipeline.sh build/demo.db --model-config models/config.yaml --generate-rtl --output-rtl outputs/new.v
 ```
 
 - 첫 번째 인자는 RAG DB 경로(선택), 이후 인자는 그대로 `orchestrator/flow.py`에 전달됩니다.
