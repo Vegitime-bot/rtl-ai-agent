@@ -3,3 +3,4 @@
 2026-03-15 08:40  python scripts/uhdm_convert.py --input build/origin.uhdm.json --output build/uhdm_modules.json --debug
 2026-03-15 17:16  surelog -parse -sverilog /Users/vegitime/.openclaw/workspace/projects/rtl-ai-agent/inputs/origin.v
 2026-03-16 09:04  surelog -parse -sverilog /Users/vegitime/.openclaw/workspace/projects/rtl-ai-agent/inputs/origin.v
+2026-03-17 00:55  python3 scripts/uhdm_extract.py build/origin.uhdm.json --output build/rtl_ast.json

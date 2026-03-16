@@ -23,15 +23,18 @@ UHMD_RANGE = 2296
 UHMD_REF_TYPESPEC = 2304
 UHMD_LOGIC_TYPESPEC = 2212
 UHMD_ALWAYS = 2013
+UHDM_ALWAYS = UHMD_ALWAYS
 UHMD_BEGIN = 2034
 UHMD_EVENT_CONTROL = 2119
 UHMD_IF_ELSE = 2165
+UHMD_IF_STMT = 2166
 
 DIRECTION_MAP = {
     1: "input",
     2: "output",
     3: "inout",
 }
+
 
 ALWAYS_KIND = {
     0: "always",
@@ -67,7 +70,14 @@ class UHDMIndex:
             UHMD_BEGIN: "factoryBegin",
             UHMD_EVENT_CONTROL: "factoryEventcontrol",
             UHMD_IF_ELSE: "factoryIfelse",
+            UHMD_IF_STMT: "factoryIfstmt",
         }
+        self._first_cache: Dict[Tuple[int, str], Any] = {}
+        self._parent_cache: Dict[int, Optional[dict]] = {}
+        self._signal_cache: Dict[Tuple[int, int], List[str]] = {}
+        self._expr_cache: Dict[Tuple[int, int], Optional[str]] = {}
+        self._module_cache: Dict[int, Optional[str]] = {}
+        self._resolve_cache: Dict[Tuple[int, int], Optional[dict]] = {}
 
     def symbol(self, value: Any) -> Optional[str]:
         if isinstance(value, str) and value.isdigit():
@@ -91,19 +101,26 @@ class UHDMIndex:
             type_str = ref.get("type")
         else:
             return None, None
-        if idx_str is None or type_str is None:
+        if idx_str is None or type_str is None or not str(idx_str).isdigit():
             return None, None
         idx = int(idx_str)
         type_code = int(type_str)
+        cache_key = (type_code, idx)
+        if cache_key in self._resolve_cache:
+            return self._resolve_cache[cache_key], type_code
         factory_name = self.type_to_factory.get(type_code)
         if factory_name is None:
+            self._resolve_cache[cache_key] = None
             return None, type_code
         arr = self.factories.get(factory_name, [])
-        if 0 <= idx < len(arr):
-            return arr[idx], type_code
-        if 0 <= idx - 1 < len(arr):
-            return arr[idx - 1], type_code
-        return None, type_code
+        result = None
+        if 1 <= idx <= len(arr):
+            result = arr[idx - 1]
+        elif 0 <= idx < len(arr):
+            result = arr[idx]
+        self._resolve_cache[cache_key] = result
+        return result, type_code
+
 
     def resolve_by_factory(self, factory: str, idx: int) -> Optional[dict]:
         arr = self.factories.get(factory, [])
@@ -112,6 +129,20 @@ class UHDMIndex:
         return None
 
     def extract_first(self, obj: dict, key: str) -> Any:
+        if not isinstance(obj, (dict, list)):
+            return None
+        cache_key = None
+        if isinstance(obj, dict):
+            cache_key = (id(obj), key)
+            if cache_key in self._first_cache:
+                return self._first_cache[cache_key]
+
+        result = self._extract_first_uncached(obj, key)
+        if cache_key is not None:
+            self._first_cache[cache_key] = result
+        return result
+
+    def _extract_first_uncached(self, obj: dict | list, key: str) -> Any:
         stack = [obj]
         seen: Set[int] = set()
         while stack:
@@ -123,6 +154,9 @@ class UHDMIndex:
                 seen.add(ident)
                 if key in current:
                     return current[key]
+                base = current.get("base")
+                if isinstance(base, dict):
+                    stack.append(base)
                 for value in current.values():
                     if isinstance(value, (dict, list)):
                         stack.append(value)
@@ -133,6 +167,19 @@ class UHDMIndex:
         return None
 
     def extract_parent(self, obj: dict) -> Optional[dict]:
+        cache_key = id(obj)
+        if cache_key in self._parent_cache:
+            return self._parent_cache[cache_key]
+
+        if isinstance(obj, dict):
+            layer = obj
+            while isinstance(layer, dict):
+                direct = layer.get("vpiParent")
+                if isinstance(direct, dict) and "index" in direct and "type" in direct:
+                    self._parent_cache[cache_key] = direct
+                    return direct
+                layer = layer.get("base")
+
         stack = [obj]
         seen: Set[int] = set()
         while stack:
@@ -144,12 +191,14 @@ class UHDMIndex:
                 seen.add(ident)
                 parent = current.get("vpiParent")
                 if isinstance(parent, dict) and "index" in parent and "type" in parent:
+                    self._parent_cache[cache_key] = parent
                     return parent
                 for value in current.values():
                     if isinstance(value, (dict, list)):
                         stack.append(value)
             elif isinstance(current, list):
                 stack.extend(value for value in current if isinstance(value, (dict, list)))
+        self._parent_cache[cache_key] = None
         return None
 
     def source_location(self, obj: dict) -> dict:
@@ -176,48 +225,88 @@ class UHDMIndex:
         parent_obj, parent_type = self.resolve(ref)
         if parent_type != UHDM_MODULE_INST or parent_obj is None:
             return None
-        is_top = parent_obj.get("vpiTopModule") or parent_obj.get("base", {}).get("vpiTop")
-        if not is_top:
-            return None
         return self.clean_name(self.symbol(self.extract_first(parent_obj, "vpiFullName")))
 
     def find_enclosing_module(self, obj: dict, obj_type: int) -> Optional[str]:
         current = obj
         current_type = obj_type
+        visited: List[int] = []
         while True:
+            cache_key = id(current)
+            if cache_key in self._module_cache:
+                cached = self._module_cache[cache_key]
+                for key in visited:
+                    self._module_cache[key] = cached
+                return cached
+            visited.append(cache_key)
+
             parent_ref = self.extract_parent(current)
             if parent_ref is None:
+                for key in visited:
+                    self._module_cache[key] = None
                 return None
             name = self.module_name_from_ref(parent_ref)
             if name:
+                for key in visited:
+                    self._module_cache[key] = name
                 return name
             parent_obj, parent_type = self.resolve(parent_ref)
-            if parent_obj is None:
+            if parent_obj is None or parent_obj is current or id(parent_obj) in visited:
+                for key in visited:
+                    self._module_cache[key] = None
                 return None
             current = parent_obj
             current_type = parent_type or 0
 
     def expr_value(self, ref: dict | None) -> Optional[str]:
+        cache_key: Optional[Tuple[int, int]] = None
+        if isinstance(ref, dict):
+            idx = ref.get("index")
+            type_str = ref.get("type")
+            if idx is not None and type_str is not None and str(idx).isdigit():
+                cache_key = (int(type_str), int(idx))
+                if cache_key in self._expr_cache:
+                    return self._expr_cache[cache_key]
+
         obj, typ = self.resolve(ref)
         if obj is None:
+            if cache_key is not None:
+                self._expr_cache[cache_key] = None
             return None
+        result: Optional[str]
         if typ == UHMD_CONSTANT:
-            return self.symbol(obj.get("base", {}).get("vpiDecompile"))
-        if typ in (UHMD_REF_OBJ, UHMD_REF_VAR):
-            return self.clean_name(self.symbol(obj.get("vpiName")))
-        if typ == UHMD_OPERATION:
+            result = self.symbol(obj.get("base", {}).get("vpiDecompile"))
+        elif typ in (UHMD_REF_OBJ, UHMD_REF_VAR):
+            result = self.clean_name(self.symbol(obj.get("vpiName")))
+        elif typ == UHMD_OPERATION:
             operands = obj.get("operands", [])
             parts = [self.expr_value(op) for op in operands]
             parts = [p for p in parts if p]
             op_type = obj.get("vpiOpType")
             if op_type == "24":  # addition
-                return f"{parts[0]} + {parts[1]}" if len(parts) >= 2 else " + ".join(parts)
-            return " ".join(parts)
-        return None
+                result = f"{parts[0]} + {parts[1]}" if len(parts) >= 2 else " + ".join(parts)
+            else:
+                result = " ".join(parts)
+        else:
+            result = None
+
+        if cache_key is not None:
+            self._expr_cache[cache_key] = result
+        return result
 
     def collect_signal_names(self, ref: dict | None) -> List[str]:
         names: List[str] = []
         visited: Set[int] = set()
+        cache_key: Optional[Tuple[int, int]] = None
+
+        if isinstance(ref, dict):
+            idx = ref.get("index")
+            type_str = ref.get("type")
+            if idx is not None and type_str is not None and str(idx).isdigit():
+                cache_key = (int(type_str), int(idx))
+                cached = self._signal_cache.get(cache_key)
+                if cached is not None:
+                    return list(cached)
 
         def dfs(node: dict | None, typ: Optional[int]) -> None:
             if node is None:
@@ -250,6 +339,8 @@ class UHDMIndex:
 
         obj, typ = self.resolve(ref)
         dfs(obj, typ)
+        if cache_key is not None:
+            self._signal_cache[cache_key] = list(names)
         return names
 
     def decode_width(self, net_obj: dict) -> Optional[str]:
