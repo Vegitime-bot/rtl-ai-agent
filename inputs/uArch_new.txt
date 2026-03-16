@@ -1,4 +1,6 @@
-# Micro-architecture (new)
-- Skip MixColumns for rounds >=5 to save power.
-- Insert masking stage before output register.
-- Latency target remains 12 cycles.
+# Micro-architecture (new TCON+)
+- Target: Display driver IC with ROI partial-update + panel TE handshake (common in AMOLED controllers).
+- Adds APB shadow registers for porch and ROI; double-buffer commits at frame boundary.
+- ROI gate drives DE only within (x0,x1)/(y0,y1); outside region filled with idle color fetched from LUT.
+- Fractional line-timer (16-step accumulator) keeps dot clock aligned to MIPI DSI ESC clock tolerance (<±50 ppm).
+- Optional TE synchronizer stretches EOF until TE rising edge, ensuring tear-free refresh.

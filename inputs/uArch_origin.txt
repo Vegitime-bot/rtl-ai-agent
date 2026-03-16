@@ -1,4 +1,6 @@
-# Micro-architecture (origin)
-- AES core executes MixColumns on every round.
-- No masking stage.
-- Total latency 12 cycles.
+# Micro-architecture (origin TCON)
+- Well-known IP: LCD Timing Controller driving 1080p60 RGB panel (similar to mainstream display driver ICs).
+- Fixed porch/sync parameters baked as module parameters.
+- Single set of counters (H,V) feeding HSYNC/VSYNC/DE combinational logic.
+- No partial update; entire frame is always scanned out.
+- No feedback from panel TE (tearing effect) pin; frame pacing is free-running.

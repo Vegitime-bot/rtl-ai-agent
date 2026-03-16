@@ -1,29 +1,63 @@
-module demo_aes (
-    input  logic         clk,
-    input  logic         rst_n,
-    input  logic [127:0] in_block,
-    input  logic         in_valid,
-    output logic [127:0] out_block,
-    output logic         out_valid
+// Display Timing Controller (origin) – 1080p60 RGB parallel output
+module tcon_basic #(
+    parameter int H_ACTIVE = 1920,
+    parameter int H_FRONT  = 88,
+    parameter int H_SYNC   = 44,
+    parameter int H_BACK   = 148,
+    parameter int V_ACTIVE = 1080,
+    parameter int V_FRONT  = 4,
+    parameter int V_SYNC   = 5,
+    parameter int V_BACK   = 36
+) (
+    input  logic clk_pixel,
+    input  logic rst_n,
+    input  logic enable,
+    output logic hsync,
+    output logic vsync,
+    output logic de,
+    output logic frame_done
 );
 
-  logic [3:0] round_cnt;
-  logic [127:0] state_reg;
+  localparam int H_TOTAL = H_ACTIVE + H_FRONT + H_SYNC + H_BACK;
+  localparam int V_TOTAL = V_ACTIVE + V_FRONT + V_SYNC + V_BACK;
 
-  always_ff @(posedge clk or negedge rst_n) begin
+  logic [$clog2(H_TOTAL)-1:0] h_cnt;
+  logic [$clog2(V_TOTAL)-1:0] v_cnt;
+
+  always_ff @(posedge clk_pixel or negedge rst_n) begin
     if (!rst_n) begin
-      round_cnt <= '0;
-      state_reg <= '0;
-    end else if (in_valid) begin
-      round_cnt <= 4'd0;
-      state_reg <= in_block;
-    end else if (round_cnt < 4'd10) begin
-      round_cnt <= round_cnt + 1'b1;
-      state_reg <= state_reg ^ 128'h1;
+      h_cnt      <= '0;
+      v_cnt      <= '0;
+      frame_done <= 1'b0;
+    end else if (!enable) begin
+      h_cnt      <= '0;
+      v_cnt      <= '0;
+      frame_done <= 1'b0;
+    end else begin
+      frame_done <= 1'b0;
+      if (h_cnt == H_TOTAL-1) begin
+        h_cnt <= '0;
+        if (v_cnt == V_TOTAL-1) begin
+          v_cnt      <= '0;
+          frame_done <= 1'b1;
+        end else begin
+          v_cnt <= v_cnt + 1'b1;
+        end
+      end else begin
+        h_cnt <= h_cnt + 1'b1;
+      end
     end
   end
 
-  assign out_block = state_reg;
-  assign out_valid = (round_cnt == 4'd10);
+  always_comb begin
+    de    = enable &&
+            (h_cnt < H_ACTIVE) &&
+            (v_cnt < V_ACTIVE);
+
+    hsync = !((h_cnt >= H_ACTIVE + H_FRONT) &&
+              (h_cnt <  H_ACTIVE + H_FRONT + H_SYNC));
+    vsync = !((v_cnt >= V_ACTIVE + V_FRONT) &&
+              (v_cnt <  V_ACTIVE + V_FRONT + V_SYNC));
+  end
 
 endmodule
