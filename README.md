@@ -64,12 +64,15 @@ source .venv/bin/activate          # 새 셸이면 다시 활성화
 ## 5. LLM 연동 (선택)
 
 1. `pip install -r requirements.txt` (requests + PyYAML 포함)  
-2. `models/config.yaml` 수정:
+2. `models/config.yaml` 수정 (provider에 따라 선택):
    ```yaml
-   endpoint: https://your-endpoint/v1
-   model: llama-3
-   api_key: sk-...
+   provider: openai        # Claude native는 'claude'
+   endpoint: https://api.anthropic.com/v1
+   model: claude-sonnet-4-6
+   max_tokens: 1024
+   api_key: ""            # 비워두면 MODEL_API_KEY 환경변수 사용
    ```
+   - Claude native로 바꾸려면 `provider: claude`, `endpoint: https://<claude-endpoint>`로 조정하면 됩니다.
    - API 키를 파일에 적기 싫으면 `MODEL_API_KEY` 환경변수로 전달 가능.
 3. 실행 시 `--model-config models/config.yaml` 옵션 추가:
    ```bash

@@ -39,6 +39,8 @@ python rag/ingest.py --db build/rag.db \
   ```
 - **LLM 연동 (요약만)**
   ```bash
+  # models/config.yaml 예시 (OpenAI 호환)
+  # provider: openai / endpoint: https://api.anthropic.com/v1 / model: claude-sonnet-4-6
   python orchestrator/flow.py --ip AES --db build/rag.db --model-config models/config.yaml
   ```
 - **RTL 생성 + 검증까지**
@@ -48,6 +50,8 @@ python rag/ingest.py --db build/rag.db \
   ```
 
 결과물: `outputs/analysis.md`, `outputs/bundle.json`, `outputs/new.v`(선택)
+
+> 참고: `models/config.yaml`의 `provider` 값을 `claude`(Anthropic native) 또는 `openai`(OpenAI 호환) 중에서 택할 수 있습니다. 엔드포인트와 모델명을 환경에 맞게 조정하세요.
 
 ## 4. 입력 파일 교체
 | 유형 | 위치 | 교체 후 실행해야 할 스크립트 |

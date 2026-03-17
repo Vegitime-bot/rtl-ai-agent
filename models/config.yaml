@@ -1,5 +1,6 @@
-# OpenAI-compatible endpoint settings
-# api_key 값은 파일에 두기 싫다면 MODEL_API_KEY 환경변수를 사용하세요.
-endpoint: https://api.example.com/v1
-model: llama-3
-api_key: ""
+# LLM endpoint settings (provider: openai | claude)
+provider: openai
+endpoint: https://api.anthropic.com/v1
+model: claude-sonnet-4-6
+max_tokens: 2048
+api_key: ""  # leave empty to rely on MODEL_API_KEY env var
