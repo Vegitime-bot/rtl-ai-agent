@@ -8,3 +8,4 @@
 | 2026-03-16 05:25 | WIP  | `uhdm_extract.py` + `build_graph.py` 연동, 모듈/edge 구조 검증 진행 중 | agent |
 | 2026-03-16 21:05 | WIP  | UHDM extractor 프로파일링, parent chain 캐시/타입 매핑 정리 | agent |
 | 2026-03-17 01:10 | BUILD | `uhdm_extract.py` 정식 정리(캐시 + 로그 제거) 및 `build_graph.py` 재검증 | agent |
+| 2026-03-18 17:45 | BUILD | Surelog/UHDM 재생성 + `rtl_ast.json` 갱신, `pygls 2.x` 대응 LSP 통합 테스트 완료 | agent |

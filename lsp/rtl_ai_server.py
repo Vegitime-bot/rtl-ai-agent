@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pygls.server import LanguageServer
-from pygls.lsp.methods import INITIALIZE, TEXT_DOCUMENT_HOVER
-from pygls.lsp.types import Hover, HoverParams, InitializeParams, MarkupContent, MarkupKind
+from pygls.lsp.server import LanguageServer
+from lsprotocol.types import Hover, HoverParams, InitializeParams, MarkupContent, MarkupKind
+
+INITIALIZE = "initialize"
+TEXT_DOCUMENT_HOVER = "textDocument/hover"
 
 RAG_DB = Path("build/rag.db")
 RTL_JSON = Path("build/rtl_ast.json")

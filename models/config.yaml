@@ -1,6 +1,6 @@
 # LLM endpoint settings (provider: openai | claude)
-provider: openai
+provider: claude
 endpoint: https://api.anthropic.com/v1
 model: claude-sonnet-4-6
-max_tokens: 2048
-api_key: ""  # leave empty to rely on MODEL_API_KEY env var
+max_tokens: 4096
+api_key: ""  # set MODEL_API_KEY env var instead of committing secrets

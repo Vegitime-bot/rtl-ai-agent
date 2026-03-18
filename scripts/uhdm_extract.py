@@ -44,6 +44,45 @@ ALWAYS_KIND = {
 }
 
 
+PREFIX_OPS = {
+    3: "!",   # vpiNotOp
+    4: "~",   # vpiBitNegOp
+    5: "&",   # reduction AND
+    6: "~&",  # reduction NAND
+    7: "|",   # reduction OR
+    8: "~|",  # reduction NOR
+    9: "^",   # reduction XOR
+    10: "~^",  # reduction XNOR
+}
+
+INFIX_OPS = {
+    11: "-",    # subtraction
+    12: "/",    # division
+    13: "%",    # modulus
+    14: "==",   # equality
+    15: "!=",   # inequality
+    16: "===",  # case equality
+    17: "!==",  # case inequality
+    18: ">",    # greater than
+    19: ">=",   # greater equal
+    20: "<",    # less than
+    21: "<=",   # less equal
+    22: "<<",   # left shift
+    23: ">>",   # right shift
+    24: "+",    # addition
+    25: "*",    # multiplication
+    26: "&&",   # logical AND
+    27: "||",   # logical OR
+    28: "&",    # bitwise AND
+    29: "|",    # bitwise OR
+    30: "^",    # bitwise XOR
+    31: "^~",   # bitwise XNOR
+    41: "<<<",  # arithmetic left shift
+    42: ">>>",  # arithmetic right shift
+    43: "**",   # power
+}
+
+
 class UHDMIndex:
     def __init__(self, data: dict):
         self.data = data
@@ -279,20 +318,62 @@ class UHDMIndex:
         elif typ in (UHMD_REF_OBJ, UHMD_REF_VAR):
             result = self.clean_name(self.symbol(obj.get("vpiName")))
         elif typ == UHMD_OPERATION:
-            operands = obj.get("operands", [])
-            parts = [self.expr_value(op) for op in operands]
-            parts = [p for p in parts if p]
-            op_type = obj.get("vpiOpType")
-            if op_type == "24":  # addition
-                result = f"{parts[0]} + {parts[1]}" if len(parts) >= 2 else " + ".join(parts)
+            operands = [self.expr_value(op) for op in obj.get("operands", [])]
+            operands = [p for p in operands if p]
+            op_type_raw = obj.get("vpiOpType")
+            if isinstance(op_type_raw, int):
+                op_type = op_type_raw
+            elif isinstance(op_type_raw, str) and op_type_raw.isdigit():
+                op_type = int(op_type_raw)
             else:
-                result = " ".join(parts)
+                op_type = None
+            result = self.format_operation(op_type, operands)
         else:
             result = None
 
         if cache_key is not None:
             self._expr_cache[cache_key] = result
         return result
+
+    def _wrap_operand(self, value: str) -> str:
+        if not value:
+            return value
+        trimmed = value.strip()
+        if not trimmed:
+            return trimmed
+        if trimmed.startswith(("(", "{", "'")):
+            return trimmed
+        if " " in trimmed or trimmed.startswith(("!", "~")):
+            return f"({trimmed})"
+        return trimmed
+
+    def format_operation(self, op_type: Optional[int], operands: List[str]) -> Optional[str]:
+        if not operands:
+            return None
+        if op_type in PREFIX_OPS:
+            symbol = PREFIX_OPS[op_type]
+            return f"{symbol}{self._wrap_operand(operands[0])}"
+        if op_type in INFIX_OPS:
+            symbol = INFIX_OPS[op_type]
+            if len(operands) >= 2:
+                left = self._wrap_operand(operands[0])
+                right = self._wrap_operand(operands[1])
+                return f"({left} {symbol} {right})"
+            return f" {symbol} ".join(operands)
+        if op_type == 32 and len(operands) >= 3:
+            return f"({operands[0]} ? {operands[1]} : {operands[2]})"
+        if op_type == 33:
+            return "{ " + ", ".join(operands) + " }"
+        if op_type == 34 and len(operands) >= 2:
+            repeat = operands[0]
+            inner = ", ".join(operands[1:])
+            return f"{{{{{repeat}{{{inner}}}}}}}"
+        if op_type in (39, 40) and operands:
+            keyword = "posedge" if op_type == 39 else "negedge"
+            return f"{keyword} {operands[0]}"
+        if len(operands) == 1:
+            return operands[0]
+        return " ".join(operands)
 
     def collect_signal_names(self, ref: dict | None) -> List[str]:
         names: List[str] = []
@@ -441,11 +522,13 @@ def summarize_assignment(index: UHDMIndex, assign: dict, kind: str) -> dict:
     if lhs_type in (UHMD_REF_OBJ, UHMD_REF_VAR) and lhs_obj:
         lhs_name = index.clean_name(index.symbol(lhs_obj.get("vpiName")))
     rhs_refs = index.collect_signal_names(assign.get("rhs"))
+    rhs_expr = index.expr_value(assign.get("rhs"))
     location = index.source_location(assign)
     return {
         "kind": kind,
         "lhs": lhs_name,
         "rhs_signals": sorted(dict.fromkeys(rhs_refs)),
+        "rhs_expr": rhs_expr,
         "source": location,
     }
 
