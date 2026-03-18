@@ -54,24 +54,38 @@ def clear_module(session: Session, module: str | None) -> None:
         session.run("MATCH (s:Signal) DETACH DELETE s")
 
 
+def ensure_node(session: Session, module: str, name: str, kind: str, meta: dict) -> None:
+    session.run(
+        """
+        MERGE (s:Signal {module:$module, name:$name})
+        SET s.kind = $kind,
+            s.width = COALESCE($width, s.width),
+            s.port_direction = COALESCE($port_direction, s.port_direction)
+        """,
+        module=module,
+        name=name,
+        kind=kind,
+        width=meta.get("width"),
+        port_direction=meta.get("port_direction"),
+    )
+
+
 def ingest_module(session: Session, module: str, graph: dict, signal_meta: Dict[str, dict]) -> dict:
     created = {"nodes": 0, "edges": 0}
+    # 1. explicit node_kinds 먼저
+    known: set = set()
     for name, kind in graph.get("node_kinds", {}).items():
-        meta = signal_meta.get(name, {})
-        session.run(
-            """
-            MERGE (s:Signal {module:$module, name:$name})
-            SET s.kind = $kind,
-                s.width = COALESCE($width, s.width),
-                s.port_direction = COALESCE($port_direction, s.port_direction)
-            """,
-            module=module,
-            name=name,
-            kind=kind,
-            width=meta.get("width"),
-            port_direction=meta.get("port_direction"),
-        )
+        ensure_node(session, module, name, kind, signal_meta.get(name, {}))
+        known.add(name)
         created["nodes"] += 1
+    # 2. edge에서 참조되지만 node_kinds에 없는 신호(localparam 등)를 'param'으로 자동 생성
+    for edge in graph.get("edges", []):
+        for sig in (edge["from"], edge["to"]):
+            if sig not in known:
+                ensure_node(session, module, sig, "param", signal_meta.get(sig, {}))
+                known.add(sig)
+                created["nodes"] += 1
+    # 3. 엣지 적재
     for edge in graph.get("edges", []):
         session.run(
             """
