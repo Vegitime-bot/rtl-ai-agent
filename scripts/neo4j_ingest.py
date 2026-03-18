@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, List
 
+import yaml
 from neo4j import GraphDatabase, Session
 
 
@@ -14,9 +16,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Load build/causal_graph.json into Neo4j")
     parser.add_argument("--graph-json", type=Path, default=Path("build/causal_graph.json"), help="Path to causal graph JSON")
     parser.add_argument("--rtl-json", type=Path, default=Path("build/rtl_ast.json"), help="Path to rtl_ast JSON (for metadata)")
-    parser.add_argument("--uri", default="bolt://localhost:7687", help="Neo4j Bolt URI")
-    parser.add_argument("--user", default="neo4j", help="Neo4j username")
-    parser.add_argument("--password", required=True, help="Neo4j password")
+    parser.add_argument("--config", type=Path, help="YAML file with Neo4j connection info")
+    parser.add_argument("--uri", help="Neo4j Bolt/neo4j URI")
+    parser.add_argument("--user", help="Neo4j username")
+    parser.add_argument("--password", help="Neo4j password (or set via config/password_env)")
     parser.add_argument("--module", help="Only ingest the specified module")
     parser.add_argument("--clear", action="store_true", help="Remove existing Signal nodes for the target module(s) before ingest")
     return parser.parse_args()
@@ -30,6 +33,32 @@ def load_graphs(path: Path) -> List[dict]:
 def load_modules(path: Path) -> Dict[str, dict]:
     data = json.loads(path.read_text())
     return {module["module"]: module for module in data.get("modules", [])}
+
+
+def apply_config(args: argparse.Namespace) -> argparse.Namespace:
+    cfg = {}
+    if args.config and args.config.exists():
+        cfg = yaml.safe_load(args.config.read_text()) or {}
+    # Helper to set value if missing
+    def fill(attr: str, default=None):
+        if getattr(args, attr) is None:
+            if attr in cfg:
+                setattr(args, attr, cfg[attr])
+            elif default is not None:
+                setattr(args, attr, default)
+    fill("uri", "bolt://localhost:7687")
+    fill("user", "neo4j")
+    fill("module", None)
+    if not args.clear and isinstance(cfg.get("clear"), bool):
+        args.clear = cfg["clear"]
+    if args.password is None:
+        if "password" in cfg:
+            args.password = cfg["password"]
+        elif cfg.get("password_env"):
+            args.password = os.getenv(cfg["password_env"])
+    if not args.password:
+        raise SystemExit("Neo4j password not provided. Use --password or config/password_env.")
+    return args
 
 
 def build_signal_index(module: dict) -> Dict[str, dict]:
@@ -103,7 +132,7 @@ def ingest_module(session: Session, module: str, graph: dict, signal_meta: Dict[
 
 
 def main() -> None:
-    args = parse_args()
+    args = apply_config(parse_args())
     graphs = load_graphs(args.graph_json)
     modules = load_modules(args.rtl_json)
 

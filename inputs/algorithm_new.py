@@ -1,26 +1,104 @@
-def tcon_partial_update(cfg, roi, te_signal):
-    """New timing controller algorithm with ROI updates + adaptive porch."""
-    active_cfg = cfg.shadow.commit()
-    frac_accum = 0
+from typing import List, Dict
 
-    for v in range(active_cfg.v_total()):
-        line_portion = derive_active_window(v, roi, active_cfg)
-        for h in range(active_cfg.h_total()):
-            inside_roi = line_portion.x0 <= h < line_portion.x1
 
-            if inside_roi:
-                emit_pixel(fetch_roi_pixel(h, v))
+def clip_u8(v: int) -> int:
+    if v < 0:
+        return 0
+    if v > 255:
+        return 255
+    return v
+
+
+def sat_mul2_u8(v: int) -> int:
+    return 255 if v >= 128 else (v << 1)
+
+
+def new_tcon_model(
+    frame: List[List[int]],
+    mirror_en: bool = False,
+    crop_en: bool = False,
+    crop_x_start: int = 0,
+    crop_x_end: int = 0,
+    crop_y_start: int = 0,
+    crop_y_end: int = 0,
+    testpat_en: bool = False,
+    gain2_en: bool = False,
+    border_en: bool = False,
+    dim_en: bool = False,
+    dim_threshold: int = 0,
+) -> Dict[str, object]:
+    if not frame:
+        return {
+            "out_frame": [],
+            "line_avg": [],
+            "line_checksum": [],
+            "line_flat": [],
+            "dim_active": [],
+        }
+
+    height = len(frame)
+    width = len(frame[0])
+
+    for row in frame:
+        if len(row) != width:
+            raise ValueError("All rows must have the same width")
+
+    out_frame: List[List[int]] = []
+    line_avg: List[int] = []
+    line_checksum: List[int] = []
+    line_flat: List[bool] = []
+    dim_active_list: List[bool] = []
+
+    for y in range(height):
+        in_line = [clip_u8(p) for p in frame[y]]
+
+        checksum = sum(in_line)
+        avg = checksum // width
+        flat = all(p == in_line[0] for p in in_line) if width > 0 else True
+        dim_active = bool(dim_en and (avg > dim_threshold))
+
+        line_avg.append(avg)
+        line_checksum.append(checksum)
+        line_flat.append(flat)
+        dim_active_list.append(dim_active)
+
+        out_line: List[int] = []
+
+        for x in range(width):
+            src_x = width - 1 - x if mirror_en else x
+
+            if testpat_en:
+                pix = ((y & 0xF) << 4) | (x & 0xF)
             else:
-                emit_pixel(active_cfg.idle_color)
+                pix = in_line[src_x]
 
-            drive_de(inside_roi)
-            drive_hsync(compute_dynamic_hsync(h, active_cfg))
-            drive_vsync(compute_dynamic_vsync(v, active_cfg))
+                if crop_en:
+                    in_crop = (
+                        crop_x_start <= x <= crop_x_end and
+                        crop_y_start <= y <= crop_y_end
+                    )
+                    if not in_crop:
+                        pix = 0
 
-            frac_accum += active_cfg.frac_step
-            if frac_accum >= 16:
-                insert_extra_clk()
-                frac_accum -= 16
+            if dim_active:
+                pix = pix >> 1
 
-        align_to_te(te_signal)  # wait for panel tearing effect feedback
-    signal_end_of_frame()
+            if gain2_en:
+                pix = sat_mul2_u8(pix)
+
+            if border_en and (
+                x == 0 or x == width - 1 or y == 0 or y == height - 1
+            ):
+                pix = 0
+
+            out_line.append(clip_u8(pix))
+
+        out_frame.append(out_line)
+
+    return {
+        "out_frame": out_frame,
+        "line_avg": line_avg,
+        "line_checksum": line_checksum,
+        "line_flat": line_flat,
+        "dim_active": dim_active_list,
+    }

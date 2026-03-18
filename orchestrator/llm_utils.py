@@ -61,7 +61,7 @@ def _call_claude(prompt: str, cfg: dict, system_prompt: str) -> str:
         "temperature": cfg.get("temperature", 0.2),
     }
     resp = requests.post(
-        cfg["endpoint"].rstrip("/") + "/v1/messages",
+        cfg["endpoint"].rstrip("/").removesuffix("/v1") + "/v1/messages",
         json=payload,
         headers=headers,
         timeout=60,

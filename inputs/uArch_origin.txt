@@ -1,6 +1,76 @@
-# Micro-architecture (origin TCON)
-- Well-known IP: LCD Timing Controller driving 1080p60 RGB panel (similar to mainstream display driver ICs).
-- Fixed porch/sync parameters baked as module parameters.
-- Single set of counters (H,V) feeding HSYNC/VSYNC/DE combinational logic.
-- No partial update; entire frame is always scanned out.
-- No feedback from panel TE (tearing effect) pin; frame pacing is free-running.
+[IP 이름]
+간단한 TCON 스타일 Line Buffer Display Controller
+
+[개요]
+이 IP는 8-bit grayscale 픽셀 스트림을 입력으로 받아
+한 줄(line) 단위로 버퍼에 저장한 뒤 출력합니다.
+
+출력 시 기본적인 timing/event 신호를 함께 생성하며,
+기존 버전에서는 다음 기능을 지원합니다.
+- 좌우 반전(mirror)
+- crop window
+- test pattern 출력
+
+[파라미터]
+- H_ACTIVE : 한 줄의 활성 픽셀 수
+- V_ACTIVE : 프레임의 활성 줄 수
+- PIXEL_W  : 픽셀 비트폭, 기본 8
+- XW       : x 좌표 비트폭
+- YW       : y 좌표 비트폭
+
+[입력 신호]
+- clk
+- rst_n
+- in_valid
+- in_pixel[PIXEL_W-1:0]
+
+- mirror_en
+  1이면 좌우 반전 출력
+
+- crop_en
+  1이면 crop window 밖의 픽셀을 0으로 출력
+
+- crop_x_start[XW-1:0]
+- crop_x_end[XW-1:0]
+- crop_y_start[YW-1:0]
+- crop_y_end[YW-1:0]
+
+- testpat_en
+  1이면 입력 픽셀 대신 내부 test pattern 출력
+
+- hsync_pol
+- vsync_pol
+
+[출력 신호]
+- out_valid
+- out_pixel[PIXEL_W-1:0]
+- de
+- hsync
+- vsync
+- frame_start
+- line_start
+- line_done
+- frame_done
+
+- stat_in_pixels[15:0]
+- stat_out_pixels[15:0]
+- stat_line_avg[PIXEL_W-1:0]
+- stat_line_checksum[15:0]
+- stat_line_flat
+
+[기능]
+1. 입력 픽셀을 한 줄 단위로 저장
+2. 한 줄 저장이 끝나면 그 줄을 출력
+3. mirror_en=1이면 좌우 반전 출력
+4. crop_en=1이면 crop window 밖은 0 출력
+5. testpat_en=1이면 test pattern 출력
+6. de/out_valid는 유효 픽셀 출력 시 활성
+7. hsync/vsync/frame_start/line_start/line_done/frame_done 출력
+8. 한 줄에 대한 평균값, checksum, flat 여부를 status로 출력
+
+[비트폭]
+- 입력/출력 픽셀: 8-bit
+- 좌표: XW, YW
+- line average: 8-bit
+- line checksum: 16-bit
+- pixel count: 16-bit

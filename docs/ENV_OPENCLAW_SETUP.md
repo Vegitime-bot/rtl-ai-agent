@@ -24,6 +24,14 @@ python orchestrator/flow.py --ip demo --db build/rag.db \
   --model-config models/config.yaml --generate-rtl --output-rtl outputs/new.v
 ```
 
+### 원클릭 스크립트
+환경변수만 세팅하면 전체 과정을 한 번에 실행할 수 있습니다.
+```bash
+export MODEL_API_KEY='sk-...'
+export NEO4J_PASSWORD='...'   # config/neo4j.yaml 에서 password_env 로 참조
+./scripts/run_full_pipeline.sh
+```
+
 ## 4. LSP / IDE 통합
 ```bash
 python -m lsp.rtl_ai_server  # stdio 기반
@@ -32,9 +40,6 @@ python -m lsp.rtl_ai_server  # stdio 기반
 
 ## 5. Neo4j 적재 (외부 Bolt URI 확보 시)
 ```bash
-python scripts/neo4j_ingest.py \
-  --uri bolt://<host>:7687 \
-  --user neo4j --password '<pwd>' \
-  --module tcon_basic --clear
+python scripts/neo4j_ingest.py --config config/neo4j.yaml
 ```
-> 현재 OpenClaw 호스트에는 Neo4j 서버가 없으므로, 원격 Bolt URI/계정을 받아 접속해야 합니다.
+> `config/neo4j.yaml`에서 `password_env`를 사용하므로 `export NEO4J_PASSWORD='...'` 필요.

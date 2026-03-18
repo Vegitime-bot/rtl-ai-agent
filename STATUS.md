@@ -10,3 +10,4 @@
 | 2026-03-17 01:10 | BUILD | `uhdm_extract.py` 정식 정리(캐시 + 로그 제거) 및 `build_graph.py` 재검증 | agent |
 | 2026-03-18 17:45 | BUILD | Surelog/UHDM 재생성 + `rtl_ast.json` 갱신, `pygls 2.x` 대응 LSP 통합 테스트 완료 | agent |
 | 2026-03-18 20:15 | WIP  | `scripts/neo4j_ingest.py` 작성, causal graph → Neo4j 적재 파이프라인 초안 | agent |
+| 2026-03-19 02:40 | BUILD | `run_full_pipeline.sh` 추가, Neo4j ingest 자동화 + config/neo4j.yaml 도입 | agent |

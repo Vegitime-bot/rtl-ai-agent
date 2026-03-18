@@ -1,6 +1,115 @@
-# Micro-architecture (new TCON+)
-- Target: Display driver IC with ROI partial-update + panel TE handshake (common in AMOLED controllers).
-- Adds APB shadow registers for porch and ROI; double-buffer commits at frame boundary.
-- ROI gate drives DE only within (x0,x1)/(y0,y1); outside region filled with idle color fetched from LUT.
-- Fractional line-timer (16-step accumulator) keeps dot clock aligned to MIPI DSI ESC clock tolerance (<±50 ppm).
-- Optional TE synchronizer stretches EOF until TE rising edge, ensuring tear-free refresh.
+[IP 이름]
+확장된 TCON 스타일 Line Buffer Display Controller
+
+[개요]
+new 버전은 original 기능을 유지하면서
+출력 픽셀 처리 기능을 추가한 버전입니다.
+
+기존 기능:
+- 좌우 반전(mirror)
+- crop window
+- test pattern 출력
+
+추가 기능:
+- line 평균 기반 dimming
+- brightness gain x2
+- 1-pixel black border overlay
+
+[파라미터]
+- H_ACTIVE : 한 줄의 활성 픽셀 수
+- V_ACTIVE : 프레임의 활성 줄 수
+- PIXEL_W  : 픽셀 비트폭, 기본 8
+- XW       : x 좌표 비트폭
+- YW       : y 좌표 비트폭
+
+[입력 신호]
+기존 입력은 모두 유지하고, 아래 입력이 추가됩니다.
+
+기존 입력:
+- clk
+- rst_n
+- in_valid
+- in_pixel[PIXEL_W-1:0]
+- mirror_en
+- crop_en
+- crop_x_start[XW-1:0]
+- crop_x_end[XW-1:0]
+- crop_y_start[YW-1:0]
+- crop_y_end[YW-1:0]
+- testpat_en
+- hsync_pol
+- vsync_pol
+
+추가 입력:
+- gain2_en
+  1이면 출력 픽셀을 2배로 증가시키고 255에서 saturation
+
+- border_en
+  1이면 화면 가장자리 1-pixel border를 0으로 출력
+
+- dim_en
+  1이면 line 평균값과 threshold를 비교하여 dim 적용
+
+- dim_threshold[PIXEL_W-1:0]
+  dim 동작 판단에 사용하는 threshold 값
+
+[출력 신호]
+기존 출력은 모두 유지하고, 아래 출력이 추가됩니다.
+
+기존 출력:
+- out_valid
+- out_pixel[PIXEL_W-1:0]
+- de
+- hsync
+- vsync
+- frame_start
+- line_start
+- line_done
+- frame_done
+- stat_in_pixels[15:0]
+- stat_out_pixels[15:0]
+- stat_line_avg[PIXEL_W-1:0]
+- stat_line_checksum[15:0]
+- stat_line_flat
+
+추가 출력:
+- stat_dim_active
+  현재 line에 dim이 적용되는지 나타내는 status
+
+[기능]
+1. original의 mirror / crop / test pattern 기능 유지
+2. line 평균값(stat_line_avg)이 dim_threshold보다 크고 dim_en=1이면 dim 적용
+3. dim 적용 시 출력 픽셀을 1비트 right shift
+4. gain2_en=1이면 dim 이후 픽셀에 대해 x2 적용
+5. gain x2 결과가 255를 넘으면 255로 saturation
+6. border_en=1이면 첫 줄/마지막 줄/첫 컬럼/마지막 컬럼은 0 출력
+7. border overlay가 최종 우선순위를 가짐
+
+[비트폭 변경]
+- 기존 픽셀 비트폭 8-bit 유지
+- 기존 좌표 비트폭 유지
+- dim_threshold 추가: 8-bit
+- stat_dim_active 추가: 1-bit
+
+[original 대비 주요 변경점]
+1. 입력 추가
+   - gain2_en
+   - border_en
+   - dim_en
+   - dim_threshold[7:0]
+
+2. 출력 추가
+   - stat_dim_active
+
+3. 픽셀 처리 로직 변경
+   - 기존: mirror / crop / test pattern
+   - 변경: mirror / crop / test pattern + dim + gain + border
+
+4. status 확장
+   - line 평균 기반 dim 적용 여부 확인 가능
+
+[호환성]
+아래 조건이면 original과 동일 동작이어야 합니다.
+- gain2_en = 0
+- border_en = 0
+- dim_en = 0

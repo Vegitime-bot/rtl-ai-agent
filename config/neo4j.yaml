@@ -1,0 +1,6 @@
+# Neo4j connection settings for scripts/neo4j_ingest.py
+# password는 환경변수로 주입하는 것이 안전합니다.
+uri: neo4j://127.0.0.1:7687
+user: neo4j
+password_env: NEO4J_PASSWORD
+clear: true
