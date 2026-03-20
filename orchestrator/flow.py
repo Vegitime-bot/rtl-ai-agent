@@ -53,14 +53,39 @@ def _extract_signals(texts: list[str]) -> list[str]:
     return [k for k, _ in sorted(seen.items(), key=lambda x: -x[1])]
 
 
-def _query_neo4j_context(module: str, signals: list[str]) -> str:
-    """Query Neo4j for causal context; return formatted string or empty string on failure."""
+def _query_neo4j_context(
+    module: str,
+    signals: list[str],
+    n_hops: int = 1,
+    output_ports: list[str] | None = None,
+) -> str:
+    """
+    Neo4j에서 causal context를 조회.
+    - output_ports 신호: n_hops+1 hop (더 넓은 컨텍스트)
+    - 일반 신호: n_hops hop
+    Neo4j 미연결 시 graceful skip.
+    """
     try:
         scripts_dir = Path(__file__).parent.parent / "scripts"
         if str(scripts_dir) not in sys.path:
             sys.path.insert(0, str(scripts_dir))
-        from neo4j_query import get_causal_context, format_graph_context  # type: ignore
-        ctx = get_causal_context(module, signals)
+        from neo4j_query import get_causal_context_nhop, format_graph_context  # type: ignore
+
+        output_ports = output_ports or []
+        output_set = set(output_ports)
+
+        regular = [s for s in signals if s not in output_set]
+        critical = [s for s in signals if s in output_set]
+
+        ctx: dict = {}
+
+        if regular:
+            ctx.update(get_causal_context_nhop(module, regular, n_hops=n_hops))
+
+        if critical:
+            # 출력 포트는 n_hops+1 hop — 상위 드라이버 체인까지 파악
+            ctx.update(get_causal_context_nhop(module, critical, n_hops=n_hops + 1))
+
         return format_graph_context(ctx)
     except Exception as exc:  # noqa: BLE001
         warnings.warn(f"[flow] Neo4j not reachable, skipping graph context: {exc}", stacklevel=2)
@@ -94,6 +119,9 @@ def main() -> None:
                         help="Max re-generation attempts on verification failure (default: 2)")
     parser.add_argument("--token-budget", type=int, default=6000,
                         help="RTL context token budget for chunked mode (default: 6000)")
+    parser.add_argument("--graph-hops", type=int, default=1,
+                        help="Neo4j causal graph hop depth for regular signals (default: 1). "
+                             "Output ports always use graph-hops+1.")
     args = parser.parse_args()
 
     build_dir = Path("build")
@@ -113,7 +141,21 @@ def main() -> None:
     primary_module = module_names[0] if module_names else args.ip
     raw_texts = [f.summary for f in findings] + [p.__dict__.get("action", "") for p in plan]
     candidate_signals = _extract_signals(raw_texts)[:30]  # cap to 30 to avoid over-querying
-    graph_ctx_text = _query_neo4j_context(primary_module, candidate_signals) if candidate_signals else ""
+
+    # 출력 포트 목록 추출 (2-hop 대상)
+    output_ports: list[str] = []
+    for mod in rtl_data.get("modules", []):
+        output_ports += [p["name"] for p in mod.get("ports", []) if p.get("direction") == "output"]
+
+    graph_ctx_text = (
+        _query_neo4j_context(
+            primary_module,
+            candidate_signals,
+            n_hops=args.graph_hops,
+            output_ports=output_ports,
+        )
+        if candidate_signals else ""
+    )
 
     model_cfg = load_model_config(args.model_config)
     llm_summary = None
