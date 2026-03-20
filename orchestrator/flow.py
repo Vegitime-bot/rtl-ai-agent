@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
 import warnings
 from pathlib import Path
@@ -24,12 +23,39 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def query_chunks(conn: sqlite3.Connection, keyword: str) -> list[dict]:
-    cur = conn.execute(
-        "SELECT kind, ref, content FROM chunks WHERE content LIKE ?",
-        (f"%{keyword}%",),
-    )
-    return [dict(zip(["kind", "ref", "content"], row)) for row in cur.fetchall()]
+def query_spec_context(
+    query: str,
+    index_dir: Path,
+    model_name_or_path: str = "BAAI/bge-m3",
+    top_k: int = 5,
+    kind_filter: list[str] | None = None,
+) -> list[dict]:
+    """
+    FAISS 인덱스에서 시맨틱 검색.
+    인덱스가 없으면 graceful skip (빈 리스트 반환).
+    """
+    try:
+        rag_dir = Path(__file__).parent.parent / "rag"
+        if str(rag_dir) not in sys.path:
+            sys.path.insert(0, str(rag_dir))
+        from query_faiss import search  # type: ignore
+        return search(
+            query,
+            index_dir=index_dir,
+            top_k=top_k,
+            model_name_or_path=model_name_or_path,
+            kind_filter=kind_filter,
+        )
+    except FileNotFoundError:
+        warnings.warn(
+            f"[flow] FAISS index not found at {index_dir}. "
+            "Run rag/ingest_faiss.py to build it. Skipping semantic search.",
+            stacklevel=2,
+        )
+        return []
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(f"[flow] FAISS search failed: {exc}", stacklevel=2)
+        return []
 
 
 _SIGNAL_RE = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]{1,63})\b")
@@ -105,7 +131,12 @@ def summarize_graphs(data: dict) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ip", default="demo")
-    parser.add_argument("--db", default="build/rag.db")
+    parser.add_argument("--db", default="build/rag.db",
+                        help="[deprecated] SQLite DB path (ignored, kept for backward compat)")
+    parser.add_argument("--faiss-index", type=Path, default=Path("build/faiss_index"),
+                        help="FAISS index directory (default: build/faiss_index)")
+    parser.add_argument("--embed-model", type=str, default="BAAI/bge-m3",
+                        help="BGE-M3 model path or HuggingFace ID (default: BAAI/bge-m3)")
     parser.add_argument("--out", default="outputs/analysis.md")
     parser.add_argument("--model-config", type=Path)
     parser.add_argument("--origin-rtl", type=Path, default=Path("inputs/origin.v"))
@@ -129,8 +160,21 @@ def main() -> None:
     pseudo_diff = load_json(build_dir / "pseudo_diff.json")["diff"]
     graph_path = build_dir / "causal_graph.json"
     graph_data = load_json(graph_path) if graph_path.exists() else {"graphs": []}
-    conn = sqlite3.connect(args.db)
-    ma_chunks = [c for c in query_chunks(conn, args.ip) if c["kind"] == "ma"]
+
+    # 스펙 관련 청크를 FAISS 시맨틱 검색으로 조회
+    spec_query = f"RTL module specification changes {args.ip}"
+    spec_chunks = query_spec_context(
+        spec_query,
+        index_dir=args.faiss_index,
+        model_name_or_path=args.embed_model,
+        top_k=8,
+        kind_filter=["uarch", "algorithm"],
+    )
+    # spec_agent가 기대하는 형식으로 변환 (content 키)
+    ma_chunks = [
+        {"kind": c.get("kind", "ma"), "ref": c.get("ref", ""), "content": c.get("text", "")}
+        for c in spec_chunks
+    ]
 
     findings = analyze(ma_chunks, "\n".join(pseudo_diff))
     graph_notes = summarize_graphs(graph_data)
