@@ -13,9 +13,9 @@ from pathlib import Path
 from agents.plan_agent import build_plan
 from agents.report_agent import write_report
 from agents.spec_agent import analyze
-from codegen import generate_rtl
+from codegen import generate_rtl, generate_rtl_with_retry
 from llm_utils import call_llm, load_model_config
-from verify import run_checks
+# run_checks is called inside codegen.generate_rtl_with_retry
 
 
 def load_json(path: Path) -> dict:
@@ -90,6 +90,8 @@ def main() -> None:
     parser.add_argument("--algo-new", type=Path, default=Path("inputs/algorithm_new.py"))
     parser.add_argument("--generate-rtl", action="store_true")
     parser.add_argument("--output-rtl", type=Path, default=Path("outputs/new.v"))
+    parser.add_argument("--max-retries", type=int, default=2,
+                        help="Max re-generation attempts on verification failure (default: 2)")
     args = parser.parse_args()
 
     build_dir = Path("build")
@@ -131,7 +133,8 @@ def main() -> None:
     if args.generate_rtl:
         if not model_cfg:
             raise ValueError("Model config is required for RTL generation")
-        generate_rtl(
+        causal_graph_path = build_dir / "causal_graph.json"
+        _, verification = generate_rtl_with_retry(
             model_cfg,
             args.origin_rtl,
             args.uarch_origin,
@@ -139,20 +142,11 @@ def main() -> None:
             args.algo_origin,
             args.algo_new,
             args.output_rtl,
+            causal_graph_path=causal_graph_path,
+            max_retries=args.max_retries,
         )
-        causal_graph_path = build_dir / "causal_graph.json"
-        verification = run_checks(args.output_rtl, causal_graph_path=causal_graph_path)
         status = verification["status"]
-        print(f"[flow] generated RTL -> {args.output_rtl} ({status})")
-        if status == "fail":
-            failed = [
-                f"  [{name}] {res.get('detail', '')} {res.get('missing_edges', '')}"
-                for name, res in verification["results"].items()
-                if res.get("status") == "fail"
-            ]
-            print("[flow] verification failures:")
-            for line in failed:
-                print(line)
+        print(f"[flow] final RTL -> {args.output_rtl} ({status})")
 
     write_report(Path(args.out), findings, plan, llm_summary)
     Path("outputs/bundle.json").write_text(json.dumps({
