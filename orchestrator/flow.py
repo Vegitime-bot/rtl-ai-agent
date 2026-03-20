@@ -92,6 +92,8 @@ def main() -> None:
     parser.add_argument("--output-rtl", type=Path, default=Path("outputs/new.v"))
     parser.add_argument("--max-retries", type=int, default=2,
                         help="Max re-generation attempts on verification failure (default: 2)")
+    parser.add_argument("--token-budget", type=int, default=6000,
+                        help="RTL context token budget for chunked mode (default: 6000)")
     args = parser.parse_args()
 
     build_dir = Path("build")
@@ -134,6 +136,8 @@ def main() -> None:
         if not model_cfg:
             raise ValueError("Model config is required for RTL generation")
         causal_graph_path = build_dir / "causal_graph.json"
+        rtl_chunks_path   = build_dir / "rtl_chunks.json"
+        pseudo_diff_path  = build_dir / "pseudo_diff.json"
         _, verification = generate_rtl_with_retry(
             model_cfg,
             args.origin_rtl,
@@ -144,6 +148,9 @@ def main() -> None:
             args.output_rtl,
             causal_graph_path=causal_graph_path,
             max_retries=args.max_retries,
+            rtl_chunks_path=rtl_chunks_path,
+            pseudo_diff_path=pseudo_diff_path,
+            token_budget=args.token_budget,
         )
         status = verification["status"]
         print(f"[flow] final RTL -> {args.output_rtl} ({status})")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sys
 import warnings
 from pathlib import Path
 
@@ -55,6 +57,65 @@ def ensure_endmodule(content: str, cfg: dict) -> str:
         full = f"{full}\n{sanitize_verilog(extra)}"
         attempt += 1
     return full
+
+
+def build_prompt_chunked(
+    origin_v: Path,
+    uarch_origin: Path,
+    uarch_new: Path,
+    algo_origin: Path,
+    algo_new: Path,
+    rtl_chunks_path: Path | None = None,
+    pseudo_diff_path: Path | None = None,
+    causal_graph_path: Path | None = None,
+    token_budget: int = 6000,
+) -> tuple[str, bool]:
+    """
+    청크 기반 컨텍스트 선택 프롬프트 생성 시도.
+    청크/diff 파일이 없으면 일반 build_prompt()로 폴백.
+
+    반환: (prompt_str, chunked_mode_used: bool)
+    """
+    try:
+        from context_selector import (  # type: ignore
+            select_chunks, build_chunked_prompt, extract_diff_signals
+        )
+
+        if rtl_chunks_path is None or not rtl_chunks_path.exists():
+            return build_prompt(origin_v, uarch_origin, uarch_new, algo_origin, algo_new), False
+
+        chunks = json.loads(rtl_chunks_path.read_text())
+
+        diff_signals: set[str] = set()
+        if pseudo_diff_path and pseudo_diff_path.exists():
+            diff_obj = json.loads(pseudo_diff_path.read_text())
+            diff_signals = extract_diff_signals(diff_obj.get('diff', []))
+
+        causal_edges: list[dict] = []
+        if causal_graph_path and causal_graph_path.exists():
+            graph_obj = json.loads(causal_graph_path.read_text())
+            causal_edges = graph_obj.get('graphs', [{}])[0].get('edges', [])
+
+        selection = select_chunks(
+            chunks, diff_signals, causal_edges, token_budget=token_budget
+        )
+
+        omit_count = len(selection.omitted)
+        total = len(chunks)
+        pct = int(100 * omit_count / total) if total else 0
+        print(
+            f"[codegen] chunked context: {total - omit_count}/{total} blocks selected "
+            f"(~{selection.estimated_tokens} tokens, {pct}% omitted)"
+        )
+
+        prompt = build_chunked_prompt(
+            selection, uarch_origin, uarch_new, algo_origin, algo_new
+        )
+        return prompt, True
+
+    except Exception as exc:
+        warnings.warn(f"[codegen] chunked prompt failed ({exc}), falling back to full RTL", stacklevel=2)
+        return build_prompt(origin_v, uarch_origin, uarch_new, algo_origin, algo_new), False
 
 
 def generate_rtl(cfg: dict, origin_v: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, output: Path) -> str:
@@ -141,6 +202,9 @@ def generate_rtl_with_retry(
     output: Path,
     causal_graph_path: Path | None = None,
     max_retries: int = 2,
+    rtl_chunks_path: Path | None = None,
+    pseudo_diff_path: Path | None = None,
+    token_budget: int = 6000,
 ) -> tuple[str, dict]:
     """
     RTL을 생성하고 검증을 실행한다.
@@ -157,8 +221,16 @@ def generate_rtl_with_retry(
 
     while attempt <= max_retries:
         if attempt == 0:
-            prompt = build_prompt(origin_v, uarch_origin, uarch_new, algo_origin, algo_new)
+            prompt, chunked = build_prompt_chunked(
+                origin_v, uarch_origin, uarch_new, algo_origin, algo_new,
+                rtl_chunks_path=rtl_chunks_path,
+                pseudo_diff_path=pseudo_diff_path,
+                causal_graph_path=causal_graph_path,
+                token_budget=token_budget,
+            )
             system = "You generate production-quality synthesizable Verilog."
+            if chunked:
+                system += " For any omitted block, reproduce it exactly as-is from origin."
         else:
             prompt = _build_retry_prompt(
                 current_rtl, verification,
