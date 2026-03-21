@@ -29,6 +29,6 @@ python3 rag/ingest.py --db "$DB_PATH" \
   build/causal_graph.json
 
 echo "[demo] Running orchestrator"
-python3 orchestrator/flow.py --ip demo --db "$DB_PATH" "$@"
+python3 orchestrator/flow.py --ip demo --db "$DB_PATH" --graph-hops 1 "$@"
 
 echo "[demo] Done. See outputs/analysis.md (and bundle artifacts)."

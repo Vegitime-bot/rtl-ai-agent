@@ -154,6 +154,7 @@ def main() -> None:
                         help="Neo4j causal graph hop depth for regular signals (default: 1). "
                              "Output ports always use graph-hops+1.")
     args = parser.parse_args()
+    print(f"[flow] graph hops: {args.graph_hops} (output ports: {args.graph_hops + 1})")
 
     build_dir = Path("build")
     rtl_data = load_json(build_dir / "rtl_ast.json")

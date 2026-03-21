@@ -73,7 +73,31 @@ python rag/ingest.py --db build/rag.db \
 3. **새 데이터 반영 안 됨** → 인제스트 파이프라인 전체(2단계) 재실행
 4. **경로 문제** → 모든 명령은 레포 루트(`rtl-ai-agent/`)에서 실행
 
-## 7. LSP 서버 (옵션)
+## 7. Graph Hops 설정
+
+`--graph-hops` 옵션으로 Neo4j 인과 그래프 탐색 깊이를 제어합니다.
+
+| 값 | 동작 | 적합한 상황 |
+|---|---|---|
+| `--graph-hops 1` (기본값) | 직접 연결된 1-hop driver/dependent만 조회 | 빠른 분석, 대부분의 케이스 |
+| `--graph-hops 2` | 1-hop 이웃의 이웃까지 포함한 2-hop 조회 | 복잡한 버그 추적, 광범위 인과관계 파악 |
+
+**Output port 자동 2-hop 처리**: RTL 모듈의 output port로 지정된 신호는 `--graph-hops` 설정값에 +1을 자동 적용합니다. 예를 들어 `--graph-hops 1`이면 일반 신호는 1-hop, output port는 2-hop으로 조회합니다. 이는 출력 신호의 상위 드라이버 체인까지 파악하기 위한 설계입니다.
+
+```bash
+# 기본 실행 (1-hop, output port는 2-hop 자동 적용)
+python orchestrator/flow.py --ip AES --graph-hops 1
+
+# 2-hop 명시 (output port는 3-hop)
+python orchestrator/flow.py --ip AES --graph-hops 2
+```
+
+실행 시 적용된 hop 설정이 로그로 출력됩니다:
+```
+[flow] graph hops: 1 (output ports: 2)
+```
+
+## 8. LSP 서버 (옵션)
 ```bash
 python -m lsp.rtl_ai_server
 ```
