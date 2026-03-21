@@ -139,7 +139,10 @@ def main() -> None:
                         help="BGE-M3 model path or HuggingFace ID (default: BAAI/bge-m3)")
     parser.add_argument("--out", default="outputs/analysis.md")
     parser.add_argument("--model-config", type=Path)
-    parser.add_argument("--origin-rtl", type=Path, default=Path("inputs/origin.v"))
+    parser.add_argument("--origin-rtl-dir", type=Path, default=Path("inputs/"),
+                        help="Directory containing *.v / *.sv RTL input files (default: inputs/)")
+    parser.add_argument("--origin-rtl", type=Path, default=None,
+                        help="[deprecated] Single RTL file path. Use --origin-rtl-dir instead.")
     parser.add_argument("--uarch-origin", type=Path, default=Path("inputs/uArch_origin.txt"))
     parser.add_argument("--uarch-new", type=Path, default=Path("inputs/uArch_new.txt"))
     parser.add_argument("--algo-origin", type=Path, default=Path("inputs/algorithm_origin.py"))
@@ -154,6 +157,17 @@ def main() -> None:
                         help="Neo4j causal graph hop depth for regular signals (default: 1). "
                              "Output ports always use graph-hops+1.")
     args = parser.parse_args()
+
+    if args.origin_rtl is not None:
+        warnings.warn(
+            "--origin-rtl is deprecated; use --origin-rtl-dir instead",
+            DeprecationWarning,
+            stacklevel=1,
+        )
+        origin_rtl_dir = args.origin_rtl
+    else:
+        origin_rtl_dir = args.origin_rtl_dir
+
     print(f"[flow] graph hops: {args.graph_hops} (output ports: {args.graph_hops + 1})")
 
     build_dir = Path("build")
@@ -227,7 +241,7 @@ def main() -> None:
         pseudo_diff_path  = build_dir / "pseudo_diff.json"
         _, verification = generate_rtl_with_retry(
             model_cfg,
-            args.origin_rtl,
+            origin_rtl_dir,
             args.uarch_origin,
             args.uarch_new,
             args.algo_origin,

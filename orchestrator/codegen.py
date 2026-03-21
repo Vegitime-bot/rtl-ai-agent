@@ -8,11 +8,28 @@ from pathlib import Path
 from llm_utils import call_llm
 
 
-def build_prompt(origin_v: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path) -> str:
+def _read_rtl_sources(origin_rtl_dir: Path) -> str:
+    """Read all *.v / *.sv from a directory, or a single file, for LLM prompting."""
+    if origin_rtl_dir.is_file():
+        return origin_rtl_dir.read_text()
+    files = sorted(
+        list(origin_rtl_dir.glob("*.v")) + list(origin_rtl_dir.glob("*.sv")),
+        key=lambda p: p.name,
+    )
+    if not files:
+        raise FileNotFoundError(f"No *.v / *.sv files found in {origin_rtl_dir}")
+    parts: list[str] = []
+    for f in files:
+        parts.append(f"=== RTL: {f.name} ===")
+        parts.append(f.read_text())
+    return "\n".join(parts)
+
+
+def build_prompt(origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path) -> str:
     prompt = [
         "You are an RTL engineer. Generate a new Verilog module based on the deltas.",
         "=== Original RTL ===",
-        origin_v.read_text(),
+        _read_rtl_sources(origin_rtl_dir),
         "=== Micro-architecture (origin) ===",
         uarch_origin.read_text(),
         "=== Micro-architecture (new) ===",
@@ -60,7 +77,7 @@ def ensure_endmodule(content: str, cfg: dict) -> str:
 
 
 def build_prompt_chunked(
-    origin_v: Path,
+    origin_rtl_dir: Path,
     uarch_origin: Path,
     uarch_new: Path,
     algo_origin: Path,
@@ -82,7 +99,7 @@ def build_prompt_chunked(
         )
 
         if rtl_chunks_path is None or not rtl_chunks_path.exists():
-            return build_prompt(origin_v, uarch_origin, uarch_new, algo_origin, algo_new), False
+            return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new), False
 
         chunks = json.loads(rtl_chunks_path.read_text())
 
@@ -115,11 +132,11 @@ def build_prompt_chunked(
 
     except Exception as exc:
         warnings.warn(f"[codegen] chunked prompt failed ({exc}), falling back to full RTL", stacklevel=2)
-        return build_prompt(origin_v, uarch_origin, uarch_new, algo_origin, algo_new), False
+        return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new), False
 
 
-def generate_rtl(cfg: dict, origin_v: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, output: Path) -> str:
-    prompt = build_prompt(origin_v, uarch_origin, uarch_new, algo_origin, algo_new)
+def generate_rtl(cfg: dict, origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, output: Path) -> str:
+    prompt = build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new)
     result = call_llm(prompt, cfg, system_prompt="You generate production-quality synthesizable Verilog.")
     clean = sanitize_verilog(result)
     clean = ensure_endmodule(clean, cfg)
@@ -131,7 +148,7 @@ def generate_rtl(cfg: dict, origin_v: Path, uarch_origin: Path, uarch_new: Path,
 def _build_retry_prompt(
     prev_rtl: str,
     verification: dict,
-    origin_v: Path,
+    origin_rtl_dir: Path,
     uarch_origin: Path,
     uarch_new: Path,
     algo_origin: Path,
@@ -172,7 +189,7 @@ def _build_retry_prompt(
         failures_text,
         "",
         "=== Original RTL ===",
-        origin_v.read_text(),
+        _read_rtl_sources(origin_rtl_dir),
         "=== Micro-architecture (origin) ===",
         uarch_origin.read_text(),
         "=== Micro-architecture (new) ===",
@@ -194,7 +211,7 @@ def _build_retry_prompt(
 
 def generate_rtl_with_retry(
     cfg: dict,
-    origin_v: Path,
+    origin_rtl_dir: Path,
     uarch_origin: Path,
     uarch_new: Path,
     algo_origin: Path,
@@ -222,7 +239,7 @@ def generate_rtl_with_retry(
     while attempt <= max_retries:
         if attempt == 0:
             prompt, chunked = build_prompt_chunked(
-                origin_v, uarch_origin, uarch_new, algo_origin, algo_new,
+                origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new,
                 rtl_chunks_path=rtl_chunks_path,
                 pseudo_diff_path=pseudo_diff_path,
                 causal_graph_path=causal_graph_path,
@@ -234,7 +251,7 @@ def generate_rtl_with_retry(
         else:
             prompt = _build_retry_prompt(
                 current_rtl, verification,
-                origin_v, uarch_origin, uarch_new, algo_origin, algo_new,
+                origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new,
                 attempt,
             )
             system = (

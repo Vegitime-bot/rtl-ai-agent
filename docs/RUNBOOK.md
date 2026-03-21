@@ -48,6 +48,14 @@ python rag/ingest.py --db build/rag.db \
   python orchestrator/flow.py --ip AES --db build/rag.db \
     --model-config models/config.yaml --generate-rtl --output-rtl outputs/new.v
   ```
+- **멀티 .v 파일 입력 (디렉토리 지정)**
+  ```bash
+  # inputs/ 디렉토리에 있는 모든 *.v / *.sv 파일이 자동으로 포함됩니다.
+  python orchestrator/flow.py --ip AES --origin-rtl-dir inputs/ \
+    --model-config models/config.yaml --generate-rtl
+  ```
+  `inputs/` 디렉토리에 `.v` 또는 `.sv` 파일을 추가하기만 하면 파일명 알파벳 순서로 자동 포함됩니다.
+  각 파일은 프롬프트 내에서 `=== RTL: <filename> ===` 헤더로 구분됩니다.
 
 결과물: `outputs/analysis.md`, `outputs/bundle.json`, `outputs/new.v`(선택)
 
@@ -56,7 +64,7 @@ python rag/ingest.py --db build/rag.db \
 ## 4. 입력 파일 교체
 | 유형 | 위치 | 교체 후 실행해야 할 스크립트 |
 | --- | --- | --- |
-| RTL | `inputs/origin.v` | `parse_rtl.py`, `build_graph.py`, `rag/ingest.py` |
+| RTL | `inputs/` 디렉토리의 `*.v` / `*.sv` 파일 | `parse_rtl.py`, `build_graph.py`, `rag/ingest.py` |
 | Pseudo | `inputs/algorithm_origin.py`, `inputs/algorithm_new.py` | `diff_pseudo.py`, `rag/ingest.py` |
 | Micro-Architecture 문서 | `inputs/uArch_origin.txt`, `inputs/uArch_new.txt` | 각각 `chunk_ma.py`, `rag/ingest.py` |
 
