@@ -25,8 +25,11 @@ def _read_rtl_sources(origin_rtl_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path) -> str:
-    prompt = [
+def build_prompt(origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, graph_ctx_text: str = "") -> str:
+    prompt = []
+    if graph_ctx_text:
+        prompt.append(f"## Signal Causal Context (from Neo4j)\n{graph_ctx_text}\n")
+    prompt += [
         "You are an RTL engineer. Generate a new Verilog module based on the deltas.",
         "=== Original RTL ===",
         _read_rtl_sources(origin_rtl_dir),
@@ -86,6 +89,7 @@ def build_prompt_chunked(
     pseudo_diff_path: Path | None = None,
     causal_graph_path: Path | None = None,
     token_budget: int = 6000,
+    graph_ctx_text: str = "",
 ) -> tuple[str, bool]:
     """
     청크 기반 컨텍스트 선택 프롬프트 생성 시도.
@@ -99,7 +103,7 @@ def build_prompt_chunked(
         )
 
         if rtl_chunks_path is None or not rtl_chunks_path.exists():
-            return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new), False
+            return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new, graph_ctx_text=graph_ctx_text), False
 
         chunks = json.loads(rtl_chunks_path.read_text())
 
@@ -128,11 +132,13 @@ def build_prompt_chunked(
         prompt = build_chunked_prompt(
             selection, uarch_origin, uarch_new, algo_origin, algo_new
         )
+        if graph_ctx_text:
+            prompt = f"## Signal Causal Context (from Neo4j)\n{graph_ctx_text}\n\n{prompt}"
         return prompt, True
 
     except Exception as exc:
         warnings.warn(f"[codegen] chunked prompt failed ({exc}), falling back to full RTL", stacklevel=2)
-        return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new), False
+        return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new, graph_ctx_text=graph_ctx_text), False
 
 
 def generate_rtl(cfg: dict, origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, output: Path) -> str:
@@ -222,6 +228,7 @@ def generate_rtl_with_retry(
     rtl_chunks_path: Path | None = None,
     pseudo_diff_path: Path | None = None,
     token_budget: int = 6000,
+    graph_ctx_text: str = "",
 ) -> tuple[str, dict]:
     """
     RTL을 생성하고 검증을 실행한다.
@@ -244,6 +251,7 @@ def generate_rtl_with_retry(
                 pseudo_diff_path=pseudo_diff_path,
                 causal_graph_path=causal_graph_path,
                 token_budget=token_budget,
+                graph_ctx_text=graph_ctx_text,
             )
             system = "You generate production-quality synthesizable Verilog."
             if chunked:

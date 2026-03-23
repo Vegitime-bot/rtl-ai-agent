@@ -191,9 +191,10 @@ def main() -> None:
         for c in spec_chunks
     ]
 
-    findings = analyze(ma_chunks, "\n".join(pseudo_diff))
+    model_cfg = load_model_config(args.model_config)
+    findings = analyze(ma_chunks, "\n".join(pseudo_diff), model_cfg=model_cfg)
     graph_notes = summarize_graphs(graph_data)
-    plan = build_plan(rtl_data.get("modules", []), [f.summary for f in findings], graph_notes)
+    plan = build_plan(rtl_data.get("modules", []), [f.summary for f in findings], graph_notes, model_cfg=model_cfg)
 
     # --- Neo4j graph context injection ---
     module_names = list({g.get("module") for g in graph_data.get("graphs", []) if g.get("module")})
@@ -215,8 +216,6 @@ def main() -> None:
         )
         if candidate_signals else ""
     )
-
-    model_cfg = load_model_config(args.model_config)
     llm_summary = None
     if model_cfg:
         prompt = "Summarize the following findings and action plan:\n"
@@ -252,6 +251,7 @@ def main() -> None:
             rtl_chunks_path=rtl_chunks_path,
             pseudo_diff_path=pseudo_diff_path,
             token_budget=args.token_budget,
+            graph_ctx_text=graph_ctx_text,
         )
         status = verification["status"]
         print(f"[flow] final RTL -> {args.output_rtl} ({status})")
