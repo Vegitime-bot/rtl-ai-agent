@@ -5,3 +5,4 @@ outputs/
 *.sqlite
 rag.db
 slpp_all/
+.env

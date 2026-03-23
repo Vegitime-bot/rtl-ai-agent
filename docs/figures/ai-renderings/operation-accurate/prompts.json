@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Precise flowchart of run_full_pipeline.sh for the RTL AI agent: numbered steps run_surelog \u2192 uhdm_extract \u2192 build_graph \u2192 diff_pseudo \u2192 chunk_ma \u2192 rag.ingest \u2192 neo4j_ingest \u2192 orchestrator/flow.py \u2192 outputs + Gmail. Minimalist dashboard style, English captions, no fictional components.",
+    "file": "001-precise-flowchart-of-run-full-pipeline-s.png"
+  }
+]

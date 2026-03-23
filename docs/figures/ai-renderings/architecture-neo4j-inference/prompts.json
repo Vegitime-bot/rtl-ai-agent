@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Detailed RTL AI pipeline architecture with Neo4j actively used for inference: inputs (origin.v, algorithm_origin.py, algorithm_new.py, uArch_origin.txt, uArch_new.txt) feed into run_surelog, then uhdm_extract, build_graph producing build artifacts (rtl_ast.json, causal_graph.json, pseudo_diff.json). neo4j_ingest writes causal_graph.json to local Neo4j DB. During RTL generation, neo4j_query.py reads Neo4j graph and extracts causal context for signals. rag.db (SQLite) provides RAG data. Both neo4j_query causal context and rag.db context feed into orchestrator/flow.py (Claude LLM), which generates outputs/new.v, bundle.json, analysis.md and sends Gmail report. Neo4j is now an active inference component, not just a visualization tool. Two-line label under Neo4j: 'Active inference: signal causal context injected into LLM prompt'. Clean engineering diagram, English labels only.",
+    "file": "001-detailed-rtl-ai-pipeline-architecture-wi.png"
+  }
+]

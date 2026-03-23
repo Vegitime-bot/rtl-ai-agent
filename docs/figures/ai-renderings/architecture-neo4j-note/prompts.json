@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Detailed RTL AI pipeline architecture infographic: inputs (origin.v, algorithm_origin.py, algorithm_new.py, uArch_origin.txt, uArch_new.txt) \u2192 run_surelog \u2192 uhdm_extract \u2192 build_graph \u2192 build artifacts (rtl_ast.json, causal_graph.json, pseudo_diff.json, uarch_origin.json, uarch_new.json). From there, branch to rag.db (SQLite) feeding orchestrator/flow.py (Claude) \u2192 outputs/new.v, bundle.json, analysis.md \u2192 Gmail report. Separate branch to Neo4j labeled 'graph analytics / visualization only \u2013 not in current RTL generation loop'. Clean English labels, engineering palette.",
+    "file": "001-detailed-rtl-ai-pipeline-architecture-in.png"
+  }
+]

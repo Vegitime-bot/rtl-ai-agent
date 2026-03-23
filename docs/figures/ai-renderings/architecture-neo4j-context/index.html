@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>openai-image-gen</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 24px; font: 14px/1.4 ui-sans-serif, system-ui; background: #0b0f14; color: #e8edf2; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  figure { margin: 0; padding: 12px; border: 1px solid #1e2a36; border-radius: 14px; background: #0f1620; }
+  img { width: 100%; height: auto; border-radius: 10px; display: block; }
+  figcaption { margin-top: 10px; color: #b7c2cc; }
+  code { color: #9cd1ff; }
+</style>
+<h1>openai-image-gen</h1>
+<p>Output: <code>/Users/vegitime/.openclaw/workspace/projects/rtl-ai-agent/docs/figures/ai-renderings/architecture-neo4j-context</code></p>
+<div class="grid">
+<figure>
+  <a href="001-detailed-rtl-ai-architecture-current-sta.png"><img src="001-detailed-rtl-ai-architecture-current-sta.png" loading="lazy" /></a>
+  <figcaption>Detailed RTL AI architecture (current state, Neo4j inference ready). Show swim-lane style diagram: inputs (origin.v, algorithm_origin.py, algorithm_new.py, uArch_origin.txt, uArch_new.txt) → run_surelog → uhdm_extract → build_graph producing build artifacts (rtl_ast.json, causal_graph.json, pseudo_diff.json). neo4j_ingest sends causal_graph.json to Neo4j (local Docker). A new module &#x27;neo4j_query.py&#x27; pulls graph context, while &#x27;Analysis plan / findings (bundle.json, pseudo diff)&#x27; and &#x27;rag.db (SQLite RAG)&#x27; feed orchestrator/flow.py. Within orchestrator, highlight text block &#x27;## Graph Context (from Neo4j)&#x27; prepended to the LLM prompt. Add note: &#x27;Extract up to 30 signal identifiers from findings/plan → query Neo4j → inject causal neighbors&#x27;. Outputs: new.v, bundle.json, analysis.md → Gmail report. Clean English labels, engineering colors, emphasize Neo4j active inference.</figcaption>
+</figure>
+</div>

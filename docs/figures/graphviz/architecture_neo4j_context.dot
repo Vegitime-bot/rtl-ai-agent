@@ -1,0 +1,54 @@
+digraph rtl_ai_arch {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=12, labelloc=t, labeljust=l, splines=true];
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#424242", penwidth=1.2];
+  edge [color="#616161", penwidth=1.1, arrowsize=0.8, fontname="Helvetica", fontsize=10];
+
+  subgraph cluster_inputs {
+    label="Inputs";
+    style="rounded,dashed";
+    color="#90caf9";
+    node [fillcolor="#e3f2fd"];
+    origin [label="origin.v"];
+    algo_o [label="algorithm_origin.py"];
+    algo_n [label="algorithm_new.py"];
+    uarch_o [label="uArch_origin.txt"];
+    uarch_n [label="uArch_new.txt"];
+  }
+
+  run_surelog [label="run_surelog", fillcolor="#fff8e1"];
+  uhdm_extract [label="uhdm_extract", fillcolor="#fff8e1"];
+  build_graph [label="build_graph", fillcolor="#fff8e1"];
+
+  build_artifacts [label="build/ artifacts\nrtl_ast.json | causal_graph.json | pseudo_diff.json | uarch_*.json", fillcolor="#ede7f6", width=2.8];
+
+  ragdb [label="rag.db\n(SQLite RAG)", fillcolor="#f3e5f5"];
+  analysis_plan [label="Analysis plan / findings\n(bundle.json, pseudo diff)", fillcolor="#fef9e7"];
+
+  neo4j [label="Neo4j (local Docker)\nbolt://127.0.0.1:7687", fillcolor="#e8eaf6", color="#5c6bc0", penwidth=1.6];
+  neo4j_ingest [label="neo4j_ingest.py", fillcolor="#e8eaf6"];
+  neo4j_query [label="neo4j_query.py\n(get_causal_context)", fillcolor="#e8eaf6"];
+
+  orchestrator [label="orchestrator/flow.py\nClaude LLM\n## Graph Context (from Neo4j)\n+ RAG context + analysis guidance", fillcolor="#e8f5e9", color="#2e7d32", penwidth=1.5, width=3.5];
+
+  outputs [label="Outputs\nnew.v | bundle.json | analysis.md", fillcolor="#fce4ec"];
+  gmail [label="Gmail report", fillcolor="#fce4ec"];
+
+  {origin algo_o algo_n uarch_o uarch_n} -> run_surelog;
+  run_surelog -> uhdm_extract;
+  uhdm_extract -> build_graph;
+  build_graph -> build_artifacts;
+  build_artifacts -> ragdb;
+  build_artifacts -> neo4j_ingest;
+  build_artifacts -> analysis_plan;
+
+  neo4j_ingest -> neo4j [label="causal_graph.json"];
+  neo4j -> neo4j_query [label="drivers/dependents"];
+
+  ragdb -> orchestrator [label="RAG context"];
+  analysis_plan -> orchestrator [label="Findings + plan"];
+  neo4j_query -> orchestrator [label="Graph context\n(extract ≤30 signals)"];
+
+  orchestrator -> outputs;
+  outputs -> gmail [label="report"];
+}

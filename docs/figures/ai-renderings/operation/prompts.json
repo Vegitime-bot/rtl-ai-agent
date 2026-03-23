@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Dynamic flowchart illustration of run_full_pipeline.sh steps for an RTL AI agent: numbered stages (run_surelog, uhdm_extract, build_graph, diff_pseudo, chunk_ma, rag.ingest, neo4j_ingest, orchestrator) with glowing arrows, Korean captions, digital dashboard aesthetic.",
+    "file": "001-dynamic-flowchart-illustration-of-run-fu.png"
+  }
+]

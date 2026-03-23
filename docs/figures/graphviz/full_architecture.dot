@@ -1,0 +1,158 @@
+digraph RTL_AI_Agent {
+    graph [
+        rankdir=TB
+        fontname="Helvetica"
+        fontsize=13
+        bgcolor="#1a1a2e"
+        pad=0.5
+        splines=ortho
+        nodesep=0.6
+        ranksep=0.8
+    ]
+    node [
+        fontname="Helvetica"
+        fontsize=11
+        style="filled,rounded"
+        shape=box
+        penwidth=1.5
+    ]
+    edge [
+        fontname="Helvetica"
+        fontsize=9
+        color="#aaaaaa"
+        penwidth=1.2
+        arrowsize=0.8
+    ]
+
+    // ── INPUTS ──────────────────────────────
+    subgraph cluster_inputs {
+        label="📥  INPUTS"
+        fontcolor="#e0e0e0"
+        fontsize=13
+        style="filled,rounded"
+        fillcolor="#16213e"
+        color="#4fc3f7"
+        penwidth=2
+
+        origin_v    [label="origin.v\n(기존 RTL)"          fillcolor="#0f3460" fontcolor="#e0e0e0" color="#4fc3f7"]
+        uarch_orig  [label="uArch_origin.txt"              fillcolor="#0f3460" fontcolor="#e0e0e0" color="#4fc3f7"]
+        uarch_new   [label="uArch_new.txt"                 fillcolor="#0f3460" fontcolor="#e0e0e0" color="#4fc3f7"]
+        algo_orig   [label="algorithm_origin.py"           fillcolor="#0f3460" fontcolor="#e0e0e0" color="#4fc3f7"]
+        algo_new    [label="algorithm_new.py"              fillcolor="#0f3460" fontcolor="#e0e0e0" color="#4fc3f7"]
+    }
+
+    // ── BUILD PHASE ─────────────────────────
+    subgraph cluster_build {
+        label="🔨  BUILD PHASE"
+        fontcolor="#e0e0e0"
+        fontsize=13
+        style="filled,rounded"
+        fillcolor="#1a1a2e"
+        color="#81c784"
+        penwidth=2
+
+        surelog     [label="run_surelog.py\nuhdm_extract.py"  fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+        build_graph [label="build_graph.py"                    fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+        neo4j_ing   [label="neo4j_ingest.py"                  fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+        diff_pseudo [label="diff_pseudo.py"                    fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+        chunk_ma    [label="chunk_ma.py × 2"                  fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+        chunk_rtl   [label="chunk_rtl.py"                     fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+        faiss_ing   [label="ingest_faiss.py\n(BGE-M3 임베딩)" fillcolor="#1b5e20" fontcolor="#e0e0e0" color="#81c784"]
+
+        rtl_ast     [label="rtl_ast.json"      shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+        causal_json [label="causal_graph.json" shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+        neo4j_db    [label="Neo4j DB\n(Signal + DRIVES)" shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+        pseudo_json [label="pseudo_diff.json"  shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+        uarch_json  [label="uarch_*.json"      shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+        rtl_chunks  [label="rtl_chunks.json\n(28 blocks)" shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+        faiss_idx   [label="faiss_index/\nindex.faiss\nchunks.json" shape=cylinder fillcolor="#263238" fontcolor="#b0bec5" color="#546e7a"]
+    }
+
+    // ── INFERENCE PHASE ─────────────────────
+    subgraph cluster_infer {
+        label="🤖  INFERENCE PHASE  (flow.py)"
+        fontcolor="#e0e0e0"
+        fontsize=13
+        style="filled,rounded"
+        fillcolor="#1a1a2e"
+        color="#ce93d8"
+        penwidth=2
+
+        faiss_srch  [label="① FAISS\nsemantic search\n(top-K chunks)"  fillcolor="#4a148c" fontcolor="#e0e0e0" color="#ce93d8"]
+        spec_agent  [label="② spec_agent\nplan_agent\n→ findings / plan" fillcolor="#4a148c" fontcolor="#e0e0e0" color="#ce93d8"]
+        neo4j_qry   [label="③ Neo4j n-hop query\n일반신호 1-hop\n출력포트 2-hop" fillcolor="#4a148c" fontcolor="#e0e0e0" color="#ce93d8"]
+        ctx_sel     [label="④ context_selector\ndiff-scope RTL 청크 선택\n(token budget)" fillcolor="#4a148c" fontcolor="#e0e0e0" color="#ce93d8"]
+        llm         [label="LLM\n(Claude / OpenAI)" shape=ellipse fillcolor="#6a1b9a" fontcolor="#ffffff" color="#e040fb" penwidth=2.5]
+        verify      [label="⑤ verify()\nbasic + causal\n신호 의존성 정적 분석" fillcolor="#4a148c" fontcolor="#e0e0e0" color="#ce93d8"]
+        retry       [label="⑥ retry loop\n빠진 엣지 피드백 주입\n(최대 N회)" fillcolor="#880e4f" fontcolor="#ffffff" color="#f48fb1"]
+    }
+
+    // ── OUTPUTS ─────────────────────────────
+    subgraph cluster_outputs {
+        label="📤  OUTPUTS"
+        fontcolor="#e0e0e0"
+        fontsize=13
+        style="filled,rounded"
+        fillcolor="#1a1a2e"
+        color="#ffb74d"
+        penwidth=2
+
+        new_v       [label="outputs/new.v\n(생성된 RTL)" fillcolor="#e65100" fontcolor="#ffffff" color="#ffb74d"]
+        analysis_md [label="outputs/analysis.md"         fillcolor="#e65100" fontcolor="#ffffff" color="#ffb74d"]
+        bundle_json [label="outputs/bundle.json"         fillcolor="#e65100" fontcolor="#ffffff" color="#ffb74d"]
+    }
+
+    // ── PASS / FAIL 판정 ───────────────────
+    pass_node [label="✅ PASS\n완료" shape=ellipse fillcolor="#1b5e20" fontcolor="#ffffff" color="#69f0ae" penwidth=2]
+    fail_node [label="FAIL" shape=diamond fillcolor="#b71c1c" fontcolor="#ffffff" color="#ef9a9a" penwidth=2]
+
+    // ─── EDGES: INPUTS → BUILD ──────────────
+    origin_v    -> surelog     [color="#4fc3f7"]
+    origin_v    -> diff_pseudo [color="#4fc3f7" style=dashed]
+    origin_v    -> chunk_rtl   [color="#4fc3f7"]
+    uarch_orig  -> chunk_ma    [color="#4fc3f7"]
+    uarch_new   -> chunk_ma    [color="#4fc3f7"]
+    algo_orig   -> diff_pseudo [color="#4fc3f7"]
+    algo_new    -> diff_pseudo [color="#4fc3f7"]
+    algo_orig   -> faiss_ing   [color="#4fc3f7"]
+    algo_new    -> faiss_ing   [color="#4fc3f7"]
+
+    // ─── EDGES: BUILD internals ─────────────
+    surelog     -> rtl_ast     [color="#81c784"]
+    rtl_ast     -> build_graph [color="#81c784"]
+    build_graph -> causal_json [color="#81c784"]
+    causal_json -> neo4j_ing   [color="#81c784"]
+    neo4j_ing   -> neo4j_db    [color="#81c784"]
+    diff_pseudo -> pseudo_json [color="#81c784"]
+    chunk_ma    -> uarch_json  [color="#81c784"]
+    chunk_rtl   -> rtl_chunks  [color="#81c784"]
+    uarch_json  -> faiss_ing   [color="#81c784"]
+    faiss_ing   -> faiss_idx   [color="#81c784"]
+
+    // ─── EDGES: BUILD → INFERENCE ───────────
+    faiss_idx   -> faiss_srch  [color="#ce93d8" penwidth=2]
+    pseudo_json -> spec_agent  [color="#ce93d8" penwidth=2]
+    rtl_ast     -> spec_agent  [color="#ce93d8" penwidth=2]
+    causal_json -> neo4j_qry   [color="#ce93d8" penwidth=2 style=dashed label="fallback"]
+    neo4j_db    -> neo4j_qry   [color="#ce93d8" penwidth=2]
+    causal_json -> verify      [color="#ce93d8" penwidth=2]
+    rtl_chunks  -> ctx_sel     [color="#ce93d8" penwidth=2]
+    pseudo_json -> ctx_sel     [color="#ce93d8" penwidth=2]
+    causal_json -> ctx_sel     [color="#ce93d8" penwidth=2]
+
+    // ─── EDGES: INFERENCE flow ──────────────
+    faiss_srch  -> spec_agent  [color="#ce93d8"]
+    spec_agent  -> neo4j_qry   [color="#ce93d8"]
+    neo4j_qry   -> ctx_sel     [color="#ce93d8"]
+    ctx_sel     -> llm         [color="#e040fb" penwidth=2.5 label="prompt"]
+    llm         -> verify      [color="#e040fb" penwidth=2.5 label="new.v"]
+    verify      -> fail_node   [color="#ef9a9a" penwidth=2]
+    verify      -> pass_node   [color="#69f0ae" penwidth=2]
+    fail_node   -> retry       [color="#f48fb1" penwidth=2 label="feedback\n(missing edges)"]
+    retry       -> llm         [color="#f48fb1" penwidth=2 style=dashed]
+
+    // ─── EDGES: → OUTPUTS ───────────────────
+    pass_node   -> new_v       [color="#ffb74d" penwidth=2]
+    pass_node   -> analysis_md [color="#ffb74d" penwidth=2]
+    pass_node   -> bundle_json [color="#ffb74d" penwidth=2]
+}

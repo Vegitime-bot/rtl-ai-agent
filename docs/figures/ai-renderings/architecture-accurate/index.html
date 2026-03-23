@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>openai-image-gen</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 24px; font: 14px/1.4 ui-sans-serif, system-ui; background: #0b0f14; color: #e8edf2; }
+  h1 { font-size: 18px; margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  figure { margin: 0; padding: 12px; border: 1px solid #1e2a36; border-radius: 14px; background: #0f1620; }
+  img { width: 100%; height: auto; border-radius: 10px; display: block; }
+  figcaption { margin-top: 10px; color: #b7c2cc; }
+  code { color: #9cd1ff; }
+</style>
+<h1>openai-image-gen</h1>
+<p>Output: <code>/Users/vegitime/.openclaw/workspace/projects/rtl-ai-agent/docs/figures/ai-renderings/architecture-accurate</code></p>
+<div class="grid">
+<figure>
+  <a href="001-accurate-rtl-ai-pipeline-architecture-di.png"><img src="001-accurate-rtl-ai-pipeline-architecture-di.png" loading="lazy" /></a>
+  <figcaption>Accurate RTL AI pipeline architecture diagram: inputs (origin.v, algorithm_origin.py, algorithm_new.py, uArch_origin.txt, uArch_new.txt) → run_surelog → uhdm_extract → build_graph → build artifacts (rtl_ast.json, causal_graph.json, pseudo_diff.json, uarch_origin.json, uarch_new.json) → branches to rag.db (SQLite) and Neo4j (local Docker) → orchestrator/flow.py using Claude → outputs/new.v, bundle.json, analysis.md → Gmail report. Use precise English labels, clean engineering colors, no imaginary services.</figcaption>
+</figure>
+</div>

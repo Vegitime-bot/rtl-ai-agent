@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Futuristic layered systems architecture poster for an RTL AI pipeline: inputs (RTL, pseudo code, micro-architecture) flow into Surelog/UHDM, data lake (rtl_ast.json, causal_graph.json), branching to Neo4j graph DB and rag.db, then Claude orchestrator generating outputs/new.v and Gmail reports. Use neon gradient arrows, technical labels, Korean captions.",
+    "file": "001-futuristic-layered-systems-architecture-.png"
+  }
+]

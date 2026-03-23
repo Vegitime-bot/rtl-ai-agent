@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Accurate RTL AI pipeline architecture infographic showing analysis guidance: inputs (origin.v, algorithm_origin.py, algorithm_new.py, uArch_origin.txt, uArch_new.txt) \u2192 run_surelog \u2192 uhdm_extract \u2192 build_graph generating build artifacts (rtl_ast.json, causal_graph.json, pseudo_diff.json, uarch_origin/new.json). neo4j_ingest stores causal_graph.json in Neo4j. neo4j_query.py provides 'Graph Context' back to orchestrator/flow.py. rag.db supplies RAG context. A separate box labeled 'Analysis plan / findings (bundle.json, pseudo diff)' feeds guidance into orchestrator. Orchestrator (Claude LLM) combines GRAPH CONTEXT + RAG CONTEXT + ANALYSIS GUIDANCE to produce outputs/new.v, bundle.json, analysis.md and Gmail reports. Clear English labels, engineering palette, emphasize analysis plan arrow.",
+    "file": "001-accurate-rtl-ai-pipeline-architecture-in.png"
+  }
+]

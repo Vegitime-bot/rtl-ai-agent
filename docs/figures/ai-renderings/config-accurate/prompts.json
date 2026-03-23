@@ -1,0 +1,6 @@
+[
+  {
+    "prompt": "Technical infographic of the real RTL AI automation workspace: a Mac mini running OpenClaw with folders projects/rtl-ai-agent, run_full_pipeline.sh, build/, outputs/, offline_wheels/, a visible .env file (NEO4J_PASSWORD, MODEL_API_KEY), Gmail credentials (.config/gmail-agent), and arrows toward local Neo4j Docker and Claude + Gmail APIs. Clean blueprint style, accurate English labels only.",
+    "file": "001-technical-infographic-of-the-real-rtl-ai.png"
+  }
+]
