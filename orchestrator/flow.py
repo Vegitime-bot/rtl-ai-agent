@@ -145,8 +145,18 @@ def main() -> None:
                         help="[deprecated] Single RTL file path. Use --origin-rtl-dir instead.")
     parser.add_argument("--uarch-origin", type=Path, default=Path("inputs/uArch_origin.txt"))
     parser.add_argument("--uarch-new", type=Path, default=Path("inputs/uArch_new.txt"))
-    parser.add_argument("--algo-origin", type=Path, default=Path("inputs/algorithm_origin.py"))
-    parser.add_argument("--algo-new", type=Path, default=Path("inputs/algorithm_new.py"))
+    # 알고리즘 파일 — 디렉토리(다중 파일) 또는 단일 파일 모두 지원
+    parser.add_argument("--algo-origin-dir", type=Path,
+                        default=Path("inputs/algorithm/origin"),
+                        help="origin 알고리즘 디렉토리 (기본: inputs/algorithm/origin/)")
+    parser.add_argument("--algo-new-dir", type=Path,
+                        default=Path("inputs/algorithm/new"),
+                        help="new 알고리즘 디렉토리 (기본: inputs/algorithm/new/)")
+    # 하위 호환: 단일 파일 지정 (deprecated)
+    parser.add_argument("--algo-origin", type=Path, default=None,
+                        help="[deprecated] 단일 origin 알고리즘 파일. --algo-origin-dir 사용 권장.")
+    parser.add_argument("--algo-new", type=Path, default=None,
+                        help="[deprecated] 단일 new 알고리즘 파일. --algo-new-dir 사용 권장.")
     parser.add_argument("--generate-rtl", action="store_true")
     parser.add_argument("--output-rtl", type=Path, default=Path("outputs/new.v"))
     parser.add_argument("--max-retries", type=int, default=2,
@@ -168,6 +178,22 @@ def main() -> None:
     else:
         origin_rtl_dir = args.origin_rtl_dir
 
+    # 알고리즘 경로 해석: 단일 파일(deprecated) → 디렉토리 방식으로 통일
+    if args.algo_origin is not None or args.algo_new is not None:
+        warnings.warn(
+            "--algo-origin / --algo-new is deprecated; "
+            "use --algo-origin-dir / --algo-new-dir with directory paths instead.",
+            DeprecationWarning,
+            stacklevel=1,
+        )
+        algo_origin_path = args.algo_origin or args.algo_origin_dir
+        algo_new_path    = args.algo_new    or args.algo_new_dir
+    else:
+        algo_origin_path = args.algo_origin_dir
+        algo_new_path    = args.algo_new_dir
+
+    print(f"[flow] algo origin: {algo_origin_path}")
+    print(f"[flow] algo new   : {algo_new_path}")
     print(f"[flow] graph hops: {args.graph_hops} (output ports: {args.graph_hops + 1})")
 
     build_dir = Path("build")
@@ -243,8 +269,8 @@ def main() -> None:
             origin_rtl_dir,
             args.uarch_origin,
             args.uarch_new,
-            args.algo_origin,
-            args.algo_new,
+            algo_origin_path,
+            algo_new_path,
             args.output_rtl,
             causal_graph_path=causal_graph_path,
             max_retries=args.max_retries,

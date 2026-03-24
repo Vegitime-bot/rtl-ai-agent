@@ -8,10 +8,14 @@ GRAPH_JSON=${GRAPH_JSON:-build/causal_graph.json}
 PSEUDO_JSON=${PSEUDO_JSON:-build/pseudo_diff.json}
 UARCH_ORIGIN_JSON=${UARCH_ORIGIN_JSON:-build/uarch_origin.json}
 UARCH_NEW_JSON=${UARCH_NEW_JSON:-build/uarch_new.json}
+ALGO_ORIGIN_DIR=${ALGO_ORIGIN_DIR:-inputs/algorithm/origin}   # 다중 파일 디렉토리
+ALGO_NEW_DIR=${ALGO_NEW_DIR:-inputs/algorithm/new}
 FAISS_INDEX=${FAISS_INDEX:-build/faiss_index}
 EMBED_MODEL=${EMBED_MODEL:-}   # 생략 시 model_paths.py 가 models/bge-m3/ 자동 사용
 NEO4J_CONFIG=${NEO4J_CONFIG:-config/neo4j.yaml}
 RTL_CHUNKS_JSON=${RTL_CHUNKS_JSON:-build/rtl_chunks.json}
+
+mkdir -p build outputs
 
 # 1. RTL 파싱
 python3 scripts/run_surelog.py inputs/origin.v
@@ -19,7 +23,9 @@ python3 scripts/uhdm_extract.py build/origin.uhdm.json --output "$RTL_JSON"
 
 # 2. 그래프 + diff 빌드
 python3 scripts/build_graph.py "$RTL_JSON" "$GRAPH_JSON"
-python3 scripts/diff_pseudo.py inputs/algorithm_origin.py inputs/algorithm_new.py "$PSEUDO_JSON"
+
+# algorithm diff — origin/ 과 new/ 디렉토리 내 *.py/*.txt 다중 파일 지원
+python3 scripts/diff_pseudo.py "$ALGO_ORIGIN_DIR" "$ALGO_NEW_DIR" "$PSEUDO_JSON"
 
 # 3. uArch 청크화
 python3 scripts/chunk_ma.py inputs/uArch_origin.txt "$UARCH_ORIGIN_JSON"
@@ -33,11 +39,18 @@ python3 scripts/chunk_rtl.py inputs/origin.v "$RTL_CHUNKS_JSON"
 INGEST_MODEL_ARG=()
 [[ -n "$EMBED_MODEL" ]] && INGEST_MODEL_ARG=(--model-dir "$EMBED_MODEL")
 
+# algorithm 파일 목록 수집 (origin/ + new/ 디렉토리 전체)
+ALGO_FILES=()
+for f in "$ALGO_ORIGIN_DIR"/*.py "$ALGO_ORIGIN_DIR"/*.txt \
+         "$ALGO_NEW_DIR"/*.py    "$ALGO_NEW_DIR"/*.txt; do
+  [[ -f "$f" ]] && ALGO_FILES+=("$f")
+done
+
 python3 rag/ingest_faiss.py \
   --index-dir "$FAISS_INDEX" \
   "${INGEST_MODEL_ARG[@]}" \
   "$UARCH_ORIGIN_JSON" "$UARCH_NEW_JSON" \
-  inputs/algorithm_origin.py inputs/algorithm_new.py
+  "${ALGO_FILES[@]}"
 
 # 6. Neo4j 그래프 동기화 (선택)
 if [ -f "$NEO4J_CONFIG" ]; then
@@ -48,7 +61,6 @@ else
 fi
 
 # 7. 오케스트레이션 + RTL 생성
-# EMBED_MODEL 이 비어있으면 --embed-model 생략 → flow.py 내부에서 model_paths.py 자동 사용
 FLOW_MODEL_ARG=()
 [[ -n "$EMBED_MODEL" ]] && FLOW_MODEL_ARG=(--embed-model "$EMBED_MODEL")
 
@@ -56,6 +68,8 @@ python3 orchestrator/flow.py \
   --ip demo \
   --faiss-index "$FAISS_INDEX" \
   "${FLOW_MODEL_ARG[@]}" \
+  --algo-origin-dir "$ALGO_ORIGIN_DIR" \
+  --algo-new-dir    "$ALGO_NEW_DIR" \
   --model-config "$MODEL_CONFIG" \
   --generate-rtl \
   --output-rtl "$OUTPUT_V"
