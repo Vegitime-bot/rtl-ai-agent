@@ -19,9 +19,13 @@ python3 scripts/parse_rtl.py "$RTL_DIR" build/rtl_ast.json
 echo "[demo] Diffing pseudo code (multi-file directory mode)"
 python3 scripts/diff_pseudo.py "$ALGO_ORIGIN_DIR" "$ALGO_NEW_DIR" build/pseudo_diff.json
 
-echo "[demo] Chunking uArch docs"
-python3 scripts/chunk_ma.py inputs/uArch_origin.txt build/uarch_origin.json
-python3 scripts/chunk_ma.py inputs/uArch_new.txt build/uarch_new.json
+echo "[demo] Chunking uArch docs (파일 없으면 스킵)"
+UARCH_ORIGIN=${UARCH_ORIGIN:-inputs/uArch_origin.txt}
+UARCH_NEW=${UARCH_NEW:-inputs/uArch_new.txt}
+[ -f "$UARCH_ORIGIN" ] && python3 scripts/chunk_ma.py "$UARCH_ORIGIN" build/uarch_origin.json \
+  || echo "[demo] skip uArch origin"
+[ -f "$UARCH_NEW" ]    && python3 scripts/chunk_ma.py "$UARCH_NEW"    build/uarch_new.json \
+  || echo "[demo] skip uArch new"
 
 echo "[demo] Building causal graph"
 python3 scripts/build_graph.py build/rtl_ast.json build/causal_graph.json

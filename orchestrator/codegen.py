@@ -8,6 +8,9 @@ from pathlib import Path
 from llm_utils import call_llm
 
 
+_ALGO_SUFFIXES = {".py", ".txt", ".sv", ".v"}
+
+
 def _read_rtl_sources(origin_rtl_dir: Path) -> str:
     """Read all *.v / *.sv from a directory, or a single file, for LLM prompting."""
     if origin_rtl_dir.is_file():
@@ -25,7 +28,31 @@ def _read_rtl_sources(origin_rtl_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def build_prompt(origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, graph_ctx_text: str = "") -> str:
+def _read_algo_sources(algo_path: Path, label: str = "Algorithm") -> str:
+    """
+    알고리즘 파일 또는 디렉토리를 읽어 하나의 문자열로 반환.
+    - 단일 파일: 그대로 읽기
+    - 디렉토리: 하위 .py / .txt 파일을 정렬 후 연결
+    """
+    if algo_path.is_file():
+        return algo_path.read_text(encoding="utf-8")
+    if algo_path.is_dir():
+        files = sorted(
+            f for f in algo_path.iterdir()
+            if f.is_file() and f.suffix in _ALGO_SUFFIXES
+        )
+        if not files:
+            raise FileNotFoundError(f"No algorithm files found in {algo_path}")
+        parts: list[str] = []
+        for f in files:
+            parts.append(f"=== {label}: {f.name} ===")
+            parts.append(f.read_text(encoding="utf-8"))
+        return "\n".join(parts)
+    raise FileNotFoundError(f"Algorithm path not found: {algo_path}")
+
+
+def build_prompt(origin_rtl_dir: Path, uarch_origin: Path | None, uarch_new: Path | None,
+                 algo_origin: Path, algo_new: Path, graph_ctx_text: str = "") -> str:
     prompt = []
     if graph_ctx_text:
         prompt.append(f"## Signal Causal Context (from Neo4j)\n{graph_ctx_text}\n")
@@ -33,14 +60,16 @@ def build_prompt(origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo
         "You are an RTL engineer. Generate a new Verilog module based on the deltas.",
         "=== Original RTL ===",
         _read_rtl_sources(origin_rtl_dir),
-        "=== Micro-architecture (origin) ===",
-        uarch_origin.read_text(),
-        "=== Micro-architecture (new) ===",
-        uarch_new.read_text(),
+    ]
+    if uarch_origin is not None:
+        prompt += ["=== Micro-architecture (origin) ===", uarch_origin.read_text()]
+    if uarch_new is not None:
+        prompt += ["=== Micro-architecture (new) ===", uarch_new.read_text()]
+    prompt += [
         "=== Algorithm (origin) ===",
-        algo_origin.read_text(),
+        _read_algo_sources(algo_origin, "Algorithm origin"),
         "=== Algorithm (new) ===",
-        algo_new.read_text(),
+        _read_algo_sources(algo_new, "Algorithm new"),
         "=== Requirements ===",
         "- Keep the same module ports unless specification says otherwise.",
         "- Implement every behavioral delta described above (ROI gate, fractional timing, TE hold, etc.).",
@@ -81,8 +110,8 @@ def ensure_endmodule(content: str, cfg: dict) -> str:
 
 def build_prompt_chunked(
     origin_rtl_dir: Path,
-    uarch_origin: Path,
-    uarch_new: Path,
+    uarch_origin: Path | None,
+    uarch_new: Path | None,
     algo_origin: Path,
     algo_new: Path,
     rtl_chunks_path: Path | None = None,
@@ -141,7 +170,7 @@ def build_prompt_chunked(
         return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new, graph_ctx_text=graph_ctx_text), False
 
 
-def generate_rtl(cfg: dict, origin_rtl_dir: Path, uarch_origin: Path, uarch_new: Path, algo_origin: Path, algo_new: Path, output: Path) -> str:
+def generate_rtl(cfg: dict, origin_rtl_dir: Path, uarch_origin: Path | None, uarch_new: Path | None, algo_origin: Path, algo_new: Path, output: Path) -> str:
     prompt = build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new)
     result = call_llm(prompt, cfg, system_prompt="You generate production-quality synthesizable Verilog.")
     clean = sanitize_verilog(result)
@@ -155,8 +184,8 @@ def _build_retry_prompt(
     prev_rtl: str,
     verification: dict,
     origin_rtl_dir: Path,
-    uarch_origin: Path,
-    uarch_new: Path,
+    uarch_origin: Path | None,
+    uarch_new: Path | None,
     algo_origin: Path,
     algo_new: Path,
     attempt: int,
@@ -196,14 +225,16 @@ def _build_retry_prompt(
         "",
         "=== Original RTL ===",
         _read_rtl_sources(origin_rtl_dir),
-        "=== Micro-architecture (origin) ===",
-        uarch_origin.read_text(),
-        "=== Micro-architecture (new) ===",
-        uarch_new.read_text(),
+    ]
+    if uarch_origin is not None:
+        prompt += ["=== Micro-architecture (origin) ===", uarch_origin.read_text()]
+    if uarch_new is not None:
+        prompt += ["=== Micro-architecture (new) ===", uarch_new.read_text()]
+    prompt += [
         "=== Algorithm (origin) ===",
-        algo_origin.read_text(),
+        _read_algo_sources(algo_origin, "Algorithm origin"),
         "=== Algorithm (new) ===",
-        algo_new.read_text(),
+        _read_algo_sources(algo_new, "Algorithm new"),
         "",
         "=== Requirements ===",
         "- Fix ALL verification failures listed above.",
@@ -218,8 +249,8 @@ def _build_retry_prompt(
 def generate_rtl_with_retry(
     cfg: dict,
     origin_rtl_dir: Path,
-    uarch_origin: Path,
-    uarch_new: Path,
+    uarch_origin: Path | None,
+    uarch_new: Path | None,
     algo_origin: Path,
     algo_new: Path,
     output: Path,

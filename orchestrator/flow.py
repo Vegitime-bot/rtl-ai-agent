@@ -141,8 +141,10 @@ def main() -> None:
     parser.add_argument("--model-config", type=Path)
     parser.add_argument("--origin-rtl-dir", type=Path, default=Path("inputs/rtl"),
                         help="*.v / *.sv RTL 디렉토리 (기본: inputs/rtl/)")
-    parser.add_argument("--uarch-origin", type=Path, default=Path("inputs/uArch_origin.txt"))
-    parser.add_argument("--uarch-new", type=Path, default=Path("inputs/uArch_new.txt"))
+    parser.add_argument("--uarch-origin", type=Path, default=Path("inputs/uArch_origin.txt"),
+                        help="uArch origin 문서 (없으면 자동 스킵)")
+    parser.add_argument("--uarch-new", type=Path, default=Path("inputs/uArch_new.txt"),
+                        help="uArch new 문서 (없으면 자동 스킵)")
     parser.add_argument("--algo-origin-dir", type=Path,
                         default=Path("inputs/algorithm/origin"),
                         help="origin 알고리즘 디렉토리 (기본: inputs/algorithm/origin/)")
@@ -237,11 +239,18 @@ def main() -> None:
         causal_graph_path = build_dir / "causal_graph.json"
         rtl_chunks_path   = build_dir / "rtl_chunks.json"
         pseudo_diff_path  = build_dir / "pseudo_diff.json"
+        uarch_origin = args.uarch_origin if args.uarch_origin.exists() else None
+        uarch_new    = args.uarch_new    if args.uarch_new.exists()    else None
+        if uarch_origin is None:
+            warnings.warn(f"[flow] uArch origin 없음, 스킵: {args.uarch_origin}", stacklevel=1)
+        if uarch_new is None:
+            warnings.warn(f"[flow] uArch new 없음, 스킵: {args.uarch_new}", stacklevel=1)
+
         _, verification = generate_rtl_with_retry(
             model_cfg,
             origin_rtl_dir,
-            args.uarch_origin,
-            args.uarch_new,
+            uarch_origin,
+            uarch_new,
             algo_origin_path,
             algo_new_path,
             args.output_rtl,

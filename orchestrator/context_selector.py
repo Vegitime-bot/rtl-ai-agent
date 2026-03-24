@@ -189,14 +189,29 @@ def select_chunks(
 # 프롬프트 조립
 # ────────────────────────────────────────────
 
+_ALGO_SUFFIXES = {".py", ".txt", ".sv", ".v"}
+
+
 def _read(p: Path) -> str:
-    return p.read_text() if p.exists() else f'[file not found: {p}]'
+    """파일 또는 디렉토리를 읽어 문자열 반환."""
+    if p.is_file():
+        return p.read_text(encoding="utf-8") if p.exists() else f'[file not found: {p}]'
+    if p.is_dir():
+        files = sorted(f for f in p.iterdir() if f.is_file() and f.suffix in _ALGO_SUFFIXES)
+        if not files:
+            return f'[no algorithm files found in {p}]'
+        parts: list[str] = []
+        for f in files:
+            parts.append(f"=== {f.name} ===")
+            parts.append(f.read_text(encoding="utf-8"))
+        return "\n".join(parts)
+    return f'[path not found: {p}]'
 
 
 def build_chunked_prompt(
     selection: ChunkSelection,
-    uarch_origin: Path,
-    uarch_new: Path,
+    uarch_origin: Path | None,
+    uarch_new: Path | None,
     algo_origin: Path,
     algo_new: Path,
 ) -> str:
@@ -254,12 +269,12 @@ def build_chunked_prompt(
             selection.omitted_summary,
         ]
 
+    if uarch_origin is not None:
+        prompt_parts += ["", "=== Micro-architecture (origin) ===", _read(uarch_origin)]
+    if uarch_new is not None:
+        prompt_parts += ["=== Micro-architecture (new) ===", _read(uarch_new)]
     prompt_parts += [
         "",
-        "=== Micro-architecture (origin) ===",
-        _read(uarch_origin),
-        "=== Micro-architecture (new) ===",
-        _read(uarch_new),
         "=== Algorithm (origin) ===",
         _read(algo_origin),
         "=== Algorithm (new) ===",

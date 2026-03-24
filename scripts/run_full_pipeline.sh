@@ -28,9 +28,19 @@ python3 scripts/build_graph.py "$RTL_JSON" "$GRAPH_JSON"
 # algorithm diff — origin/ 과 new/ 디렉토리 내 *.py/*.txt 다중 파일 지원
 python3 scripts/diff_pseudo.py "$ALGO_ORIGIN_DIR" "$ALGO_NEW_DIR" "$PSEUDO_JSON"
 
-# 3. uArch 청크화
-python3 scripts/chunk_ma.py inputs/uArch_origin.txt "$UARCH_ORIGIN_JSON"
-python3 scripts/chunk_ma.py inputs/uArch_new.txt "$UARCH_NEW_JSON"
+# 3. uArch 청크화 (파일 없으면 스킵)
+UARCH_ORIGIN=${UARCH_ORIGIN:-inputs/uArch_origin.txt}
+UARCH_NEW=${UARCH_NEW:-inputs/uArch_new.txt}
+if [ -f "$UARCH_ORIGIN" ]; then
+  python3 scripts/chunk_ma.py "$UARCH_ORIGIN" "$UARCH_ORIGIN_JSON"
+else
+  echo "[run_full_pipeline] skip uArch origin (not found: $UARCH_ORIGIN)"
+fi
+if [ -f "$UARCH_NEW" ]; then
+  python3 scripts/chunk_ma.py "$UARCH_NEW" "$UARCH_NEW_JSON"
+else
+  echo "[run_full_pipeline] skip uArch new (not found: $UARCH_NEW)"
+fi
 
 # 4. RTL 청크화 (inputs/rtl/ 내 전체 파일)
 python3 scripts/chunk_rtl.py "$RTL_DIR" "$RTL_CHUNKS_JSON"
@@ -47,10 +57,15 @@ for f in "$ALGO_ORIGIN_DIR"/*.py "$ALGO_ORIGIN_DIR"/*.txt \
   [[ -f "$f" ]] && ALGO_FILES+=("$f")
 done
 
+# uArch JSON 존재하는 것만 수집
+UARCH_INGEST_FILES=()
+[ -f "$UARCH_ORIGIN_JSON" ] && UARCH_INGEST_FILES+=("$UARCH_ORIGIN_JSON")
+[ -f "$UARCH_NEW_JSON"    ] && UARCH_INGEST_FILES+=("$UARCH_NEW_JSON")
+
 python3 rag/ingest_faiss.py \
   --index-dir "$FAISS_INDEX" \
   "${INGEST_MODEL_ARG[@]}" \
-  "$UARCH_ORIGIN_JSON" "$UARCH_NEW_JSON" \
+  "${UARCH_INGEST_FILES[@]}" \
   "${ALGO_FILES[@]}"
 
 # 6. Neo4j 그래프 동기화 (선택)
