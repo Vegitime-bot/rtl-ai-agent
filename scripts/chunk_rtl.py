@@ -211,17 +211,33 @@ def chunk_verilog(source: str) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Split Verilog RTL into logical chunks')
-    parser.add_argument('rtl', type=Path, help='Input .v file')
+    parser.add_argument('rtl', type=Path,
+                        help='입력 .v/.sv 파일 또는 디렉토리 (디렉토리면 *.v/*.sv 전체 처리)')
     parser.add_argument('output', type=Path, help='Output JSON')
     args = parser.parse_args()
 
-    source = args.rtl.read_text()
-    chunks = chunk_verilog(source)
+    # 디렉토리면 하위 *.v / *.sv 전체 수집
+    if args.rtl.is_dir():
+        files = sorted(args.rtl.glob('*.v')) + sorted(args.rtl.glob('*.sv'))
+        if not files:
+            raise SystemExit(f'[chunk_rtl] ERROR: {args.rtl} 에 .v/.sv 파일이 없습니다.')
+    else:
+        files = [args.rtl]
+
+    all_chunks: list[dict] = []
+    for f in files:
+        source = f.read_text()
+        file_chunks = chunk_verilog(source)
+        # 파일 출처 기록
+        for c in file_chunks:
+            c['file'] = str(f)
+        all_chunks.extend(file_chunks)
+        print(f'[chunk_rtl] {f.name}: {len(file_chunks)} chunks')
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(chunks, indent=2))
-    print(f'[chunk_rtl] {len(chunks)} chunks → {args.output}')
-    for c in chunks:
+    args.output.write_text(json.dumps(all_chunks, indent=2))
+    print(f'[chunk_rtl] total {len(all_chunks)} chunks → {args.output}')
+    for c in all_chunks:
         print(f'  {c["kind"]:12s} L{c["line_start"]:3d}-{c["line_end"]:3d}  lhs={c["lhs"][:3]}')
 
 

@@ -139,10 +139,8 @@ def main() -> None:
                         help="BGE-M3 모델 경로 (생략 시 models/bge-m3/ 자동 사용)")
     parser.add_argument("--out", default="outputs/analysis.md")
     parser.add_argument("--model-config", type=Path)
-    parser.add_argument("--origin-rtl-dir", type=Path, default=Path("inputs/"),
-                        help="Directory containing *.v / *.sv RTL input files (default: inputs/)")
-    parser.add_argument("--origin-rtl", type=Path, default=None,
-                        help="[deprecated] Single RTL file path. Use --origin-rtl-dir instead.")
+    parser.add_argument("--origin-rtl-dir", type=Path, default=Path("inputs/rtl"),
+                        help="*.v / *.sv RTL 디렉토리 (기본: inputs/rtl/)")
     parser.add_argument("--uarch-origin", type=Path, default=Path("inputs/uArch_origin.txt"))
     parser.add_argument("--uarch-new", type=Path, default=Path("inputs/uArch_new.txt"))
     parser.add_argument("--algo-origin-dir", type=Path,
@@ -162,15 +160,7 @@ def main() -> None:
                              "Output ports always use graph-hops+1.")
     args = parser.parse_args()
 
-    if args.origin_rtl is not None:
-        warnings.warn(
-            "--origin-rtl is deprecated; use --origin-rtl-dir instead",
-            DeprecationWarning,
-            stacklevel=1,
-        )
-        origin_rtl_dir = args.origin_rtl
-    else:
-        origin_rtl_dir = args.origin_rtl_dir
+    origin_rtl_dir = args.origin_rtl_dir
 
     algo_origin_path = args.algo_origin_dir
     algo_new_path    = args.algo_new_dir

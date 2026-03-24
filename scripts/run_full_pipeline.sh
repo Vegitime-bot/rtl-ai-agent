@@ -3,6 +3,7 @@ set -euo pipefail
 
 MODEL_CONFIG=${MODEL_CONFIG:-models/config.yaml}
 OUTPUT_V=${OUTPUT_V:-outputs/new.v}
+RTL_DIR=${RTL_DIR:-inputs/rtl}           # *.v / *.sv 다중 파일 디렉토리
 RTL_JSON=${RTL_JSON:-build/rtl_ast.json}
 GRAPH_JSON=${GRAPH_JSON:-build/causal_graph.json}
 PSEUDO_JSON=${PSEUDO_JSON:-build/pseudo_diff.json}
@@ -17,8 +18,8 @@ RTL_CHUNKS_JSON=${RTL_CHUNKS_JSON:-build/rtl_chunks.json}
 
 mkdir -p build outputs
 
-# 1. RTL 파싱
-python3 scripts/run_surelog.py inputs/origin.v
+# 1. RTL 파싱 (inputs/rtl/ 내 *.v/*.sv 전체)
+python3 scripts/run_surelog.py "$RTL_DIR"
 python3 scripts/uhdm_extract.py build/origin.uhdm.json --output "$RTL_JSON"
 
 # 2. 그래프 + diff 빌드
@@ -31,8 +32,8 @@ python3 scripts/diff_pseudo.py "$ALGO_ORIGIN_DIR" "$ALGO_NEW_DIR" "$PSEUDO_JSON"
 python3 scripts/chunk_ma.py inputs/uArch_origin.txt "$UARCH_ORIGIN_JSON"
 python3 scripts/chunk_ma.py inputs/uArch_new.txt "$UARCH_NEW_JSON"
 
-# 4. RTL 청크화 (긴 RTL 대응)
-python3 scripts/chunk_rtl.py inputs/origin.v "$RTL_CHUNKS_JSON"
+# 4. RTL 청크화 (inputs/rtl/ 내 전체 파일)
+python3 scripts/chunk_rtl.py "$RTL_DIR" "$RTL_CHUNKS_JSON"
 
 # 5. FAISS 인덱스 빌드 (BGE-M3 시맨틱 RAG)
 # EMBED_MODEL 이 비어있으면 --model-dir 생략 → model_paths.py 가 models/bge-m3/ 자동 사용
@@ -66,10 +67,11 @@ FLOW_MODEL_ARG=()
 
 python3 orchestrator/flow.py \
   --ip demo \
-  --faiss-index "$FAISS_INDEX" \
+  --origin-rtl-dir  "$RTL_DIR" \
+  --faiss-index     "$FAISS_INDEX" \
   "${FLOW_MODEL_ARG[@]}" \
   --algo-origin-dir "$ALGO_ORIGIN_DIR" \
   --algo-new-dir    "$ALGO_NEW_DIR" \
-  --model-config "$MODEL_CONFIG" \
+  --model-config    "$MODEL_CONFIG" \
   --generate-rtl \
-  --output-rtl "$OUTPUT_V"
+  --output-rtl      "$OUTPUT_V"

@@ -7,13 +7,14 @@ cd "$PROJECT_ROOT"
 DB_PATH="${1:-build/rag.db}"
 shift || true
 
+RTL_DIR=${RTL_DIR:-inputs/rtl}
 ALGO_ORIGIN_DIR=${ALGO_ORIGIN_DIR:-inputs/algorithm/origin}
 ALGO_NEW_DIR=${ALGO_NEW_DIR:-inputs/algorithm/new}
 
 mkdir -p build outputs
 
 echo "[demo] Generating structured RTL"
-python3 scripts/parse_rtl.py inputs build/rtl_ast.json
+python3 scripts/parse_rtl.py "$RTL_DIR" build/rtl_ast.json
 
 echo "[demo] Diffing pseudo code (multi-file directory mode)"
 python3 scripts/diff_pseudo.py "$ALGO_ORIGIN_DIR" "$ALGO_NEW_DIR" build/pseudo_diff.json
@@ -36,7 +37,7 @@ python3 orchestrator/flow.py \
   --ip demo \
   --db "$DB_PATH" \
   --graph-hops 1 \
-  --origin-rtl-dir inputs/ \
+  --origin-rtl-dir  "$RTL_DIR" \
   --algo-origin-dir "$ALGO_ORIGIN_DIR" \
   --algo-new-dir    "$ALGO_NEW_DIR" \
   "$@"

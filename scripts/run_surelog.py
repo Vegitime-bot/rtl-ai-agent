@@ -55,7 +55,8 @@ def convert_uhdm_to_json(schema: Path, binary_path: Path, json_path: Path) -> No
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Surelog and emit UHDM artifacts")
-    parser.add_argument("rtl", type=Path, nargs="?", default=Path("inputs/origin.v"), help="RTL entry point (default: inputs/origin.v)")
+    parser.add_argument("rtl", type=Path, nargs="?", default=Path("inputs/rtl"),
+                        help="RTL .v/.sv 파일 또는 디렉토리 (기본: inputs/rtl/)")
     parser.add_argument("--surelog", default="surelog", help="Surelog executable (default: surelog on PATH)")
     parser.add_argument("--schema", type=Path, help="Path to UHDM.capnp schema (auto-detected if omitted)")
     parser.add_argument("--build-dir", type=Path, default=Path("build"), help="Output directory for artifacts")
@@ -63,16 +64,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--json-out", type=Path, default=None, help="Optional explicit path for UHDM JSON output")
     parser.add_argument("--log-file", type=Path, default=Path("logs/commands.log"), help="Command log file (default: logs/commands.log)")
     parser.add_argument("--no-clean", action="store_true", help="Do not delete existing slpp_all directory before running")
-    parser.add_argument("--extra", nargs=argparse.REMAINDER, help="Additional flags passed to Surelog after the RTL path")
+    parser.add_argument("--extra", nargs=argparse.REMAINDER, help="Additional flags passed to Surelog after the RTL paths")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     project_root = Path.cwd()
-    rtl_path = (project_root / args.rtl).resolve()
-    if not rtl_path.exists():
-        raise SystemExit(f"RTL file not found: {rtl_path}")
+    rtl_input = (project_root / args.rtl).resolve()
+
+    # 디렉토리면 하위 *.v / *.sv 전체 수집, 단일 파일이면 그대로
+    if rtl_input.is_dir():
+        rtl_files = sorted(rtl_input.glob("*.v")) + sorted(rtl_input.glob("*.sv"))
+        if not rtl_files:
+            raise SystemExit(f"RTL 파일이 없습니다: {rtl_input}")
+        print(f"[run_surelog] {len(rtl_files)} RTL file(s) from {rtl_input}")
+    elif rtl_input.is_file():
+        rtl_files = [rtl_input]
+    else:
+        raise SystemExit(f"RTL 경로를 찾을 수 없습니다: {rtl_input}")
 
     schema_path = args.schema
     if schema_path is None:
@@ -94,8 +104,7 @@ def main() -> None:
         args.surelog,
         "-parse",
         "-sverilog",
-        str(rtl_path),
-    ]
+    ] + [str(f) for f in rtl_files]   # 다중 파일 전달
     if args.extra:
         surelog_cmd.extend(args.extra)
 
