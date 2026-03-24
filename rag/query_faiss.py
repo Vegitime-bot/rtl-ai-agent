@@ -57,7 +57,7 @@ def search(
     query: str,
     index_dir: Path = Path("build/faiss_index"),
     top_k: int = 5,
-    model_name_or_path: str = "BAAI/bge-m3",
+    model_name_or_path: str | None = None,
     kind_filter: list[str] | None = None,
     score_threshold: float = 0.0,
 ) -> list[dict]:
@@ -135,7 +135,8 @@ if __name__ == "__main__":
     parser.add_argument("--index-dir", type=Path, default=Path("build/faiss_index"))
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--kind", nargs="*", help="Filter by kind (uarch, algorithm, ...)")
-    parser.add_argument("--model-dir", type=str, default="BAAI/bge-m3")
+    parser.add_argument("--model-dir", type=str, default=None,
+                        help="BGE-M3 모델 경로 (생략 시 models/bge-m3/ 자동 사용)")
     args = parser.parse_args()
 
     hits = search(

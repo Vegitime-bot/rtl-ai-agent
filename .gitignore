@@ -6,3 +6,10 @@ outputs/
 rag.db
 slpp_all/
 .env
+
+# BGE-M3 모델 바이너리 (용량이 크므로 Git 제외)
+models/bge-m3/*.safetensors
+models/bge-m3/*.bin
+models/bge-m3/*.ot
+models/bge-m3/flax_model*
+models/bge-m3/tf_model*

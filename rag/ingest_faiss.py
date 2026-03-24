@@ -104,8 +104,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest docs into FAISS index via BGE-M3")
     parser.add_argument("inputs", nargs="+", type=Path, help="JSON / .py / .v files to ingest")
     parser.add_argument("--index-dir", type=Path, default=Path("build/faiss_index"))
-    parser.add_argument("--model-dir", type=str, default="BAAI/bge-m3",
-                        help="Local model path or HuggingFace model ID")
+    parser.add_argument("--model-dir", type=str, default=None,
+                        help="BGE-M3 모델 경로 (생략 시 models/bge-m3/ 자동 사용)")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-length", type=int, default=512)
     args = parser.parse_args()
