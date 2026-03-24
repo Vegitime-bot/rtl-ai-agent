@@ -135,8 +135,8 @@ def main() -> None:
                         help="[deprecated] SQLite DB path (ignored, kept for backward compat)")
     parser.add_argument("--faiss-index", type=Path, default=Path("build/faiss_index"),
                         help="FAISS index directory (default: build/faiss_index)")
-    parser.add_argument("--embed-model", type=str, default="BAAI/bge-m3",
-                        help="BGE-M3 model path or HuggingFace ID (default: BAAI/bge-m3)")
+    parser.add_argument("--embed-model", type=str, default=None,
+                        help="BGE-M3 모델 경로 (생략 시 models/bge-m3/ 자동 사용)")
     parser.add_argument("--out", default="outputs/analysis.md")
     parser.add_argument("--model-config", type=Path)
     parser.add_argument("--origin-rtl-dir", type=Path, default=Path("inputs/"),

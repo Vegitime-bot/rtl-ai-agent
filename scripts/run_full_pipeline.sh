@@ -9,7 +9,7 @@ PSEUDO_JSON=${PSEUDO_JSON:-build/pseudo_diff.json}
 UARCH_ORIGIN_JSON=${UARCH_ORIGIN_JSON:-build/uarch_origin.json}
 UARCH_NEW_JSON=${UARCH_NEW_JSON:-build/uarch_new.json}
 FAISS_INDEX=${FAISS_INDEX:-build/faiss_index}
-EMBED_MODEL=${EMBED_MODEL:-BAAI/bge-m3}
+EMBED_MODEL=${EMBED_MODEL:-}   # 생략 시 model_paths.py 가 models/bge-m3/ 자동 사용
 NEO4J_CONFIG=${NEO4J_CONFIG:-config/neo4j.yaml}
 RTL_CHUNKS_JSON=${RTL_CHUNKS_JSON:-build/rtl_chunks.json}
 
@@ -29,9 +29,13 @@ python3 scripts/chunk_ma.py inputs/uArch_new.txt "$UARCH_NEW_JSON"
 python3 scripts/chunk_rtl.py inputs/origin.v "$RTL_CHUNKS_JSON"
 
 # 5. FAISS 인덱스 빌드 (BGE-M3 시맨틱 RAG)
+# EMBED_MODEL 이 비어있으면 --model-dir 생략 → model_paths.py 가 models/bge-m3/ 자동 사용
+INGEST_MODEL_ARG=()
+[[ -n "$EMBED_MODEL" ]] && INGEST_MODEL_ARG=(--model-dir "$EMBED_MODEL")
+
 python3 rag/ingest_faiss.py \
   --index-dir "$FAISS_INDEX" \
-  --model-dir "$EMBED_MODEL" \
+  "${INGEST_MODEL_ARG[@]}" \
   "$UARCH_ORIGIN_JSON" "$UARCH_NEW_JSON" \
   inputs/algorithm_origin.py inputs/algorithm_new.py
 
@@ -44,10 +48,14 @@ else
 fi
 
 # 7. 오케스트레이션 + RTL 생성
+# EMBED_MODEL 이 비어있으면 --embed-model 생략 → flow.py 내부에서 model_paths.py 자동 사용
+FLOW_MODEL_ARG=()
+[[ -n "$EMBED_MODEL" ]] && FLOW_MODEL_ARG=(--embed-model "$EMBED_MODEL")
+
 python3 orchestrator/flow.py \
   --ip demo \
   --faiss-index "$FAISS_INDEX" \
-  --embed-model "$EMBED_MODEL" \
+  "${FLOW_MODEL_ARG[@]}" \
   --model-config "$MODEL_CONFIG" \
   --generate-rtl \
   --output-rtl "$OUTPUT_V"
