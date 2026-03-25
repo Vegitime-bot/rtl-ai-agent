@@ -53,7 +53,25 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
     )
     resp.raise_for_status()
     if not use_stream:
-        return resp.json()["choices"][0]["message"]["content"]
+        data = resp.json()
+        choice = data["choices"][0]
+        finish_reason = choice.get("finish_reason", "unknown")
+        usage = data.get("usage", {})
+        print(
+            f"[llm] finish_reason={finish_reason} | "
+            f"prompt_tokens={usage.get('prompt_tokens','?')} "
+            f"completion_tokens={usage.get('completion_tokens','?')} "
+            f"total={usage.get('total_tokens','?')} | "
+            f"max_tokens_requested={max_tokens}"
+        )
+        if finish_reason == "length":
+            import warnings
+            warnings.warn(
+                f"[llm] ⚠️  finish_reason=length: 출력이 max_tokens({max_tokens})에서 잘림. "
+                "yaml의 max_tokens 값을 높이거나 --output-max-tokens를 늘리세요.",
+                stacklevel=3,
+            )
+        return choice["message"]["content"]
 
     chunks: list[str] = []
     for line in resp.iter_lines():
