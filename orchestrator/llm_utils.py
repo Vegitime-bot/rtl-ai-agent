@@ -22,6 +22,21 @@ def load_model_config(path: Path | None) -> dict | None:
     return data
 
 
+def safe_input_token_budget(cfg: dict, safety_margin: int = 2000) -> int:
+    """
+    모델 context_window 내에서 안전하게 사용 가능한 입력 토큰 예산 반환.
+
+    context_window (yaml 설정) - max_tokens (출력) - safety_margin = 입력 예산
+    yaml에 context_window가 없으면 기본 32000 사용 (보수적).
+
+    예) context_window=131072, max_tokens=65536 → 입력 예산 = 63536
+    """
+    context_window = cfg.get("context_window", 32000)
+    max_tokens = cfg.get("max_tokens", 1024)
+    budget = context_window - max_tokens - safety_margin
+    return max(budget, 4000)  # 최소 4000은 보장
+
+
 def _estimate_timeout(max_tokens: int, base: int = 60) -> int:
     """max_tokens 기반으로 timeout(초) 동적 계산. 토큰 10개당 약 1초 여유."""
     return max(base, base + max_tokens // 10)

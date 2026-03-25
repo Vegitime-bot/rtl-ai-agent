@@ -13,7 +13,7 @@ from agents.plan_agent import build_plan
 from agents.report_agent import write_report
 from agents.spec_agent import analyze
 from codegen import generate_rtl, generate_rtl_with_retry
-from llm_utils import call_llm, load_model_config
+from llm_utils import call_llm, load_model_config, safe_input_token_budget
 # run_checks is called inside codegen.generate_rtl_with_retry
 
 
@@ -248,6 +248,14 @@ def main() -> None:
         if uarch_new is None:
             warnings.warn(f"[flow] uArch new 없음, 스킵: {args.uarch_new}", stacklevel=1)
 
+        # token_budget: CLI 지정 없으면 context_window 기반 자동 계산
+        effective_token_budget = (
+            args.token_budget
+            if args.token_budget != 6000  # 기본값이면 자동 계산
+            else safe_input_token_budget(model_cfg)
+        )
+        print(f"[flow] input token budget: {effective_token_budget} tokens")
+
         _, verification = generate_rtl_with_retry(
             model_cfg,
             origin_rtl_dir,
@@ -260,7 +268,7 @@ def main() -> None:
             max_retries=args.max_retries,
             rtl_chunks_path=rtl_chunks_path,
             pseudo_diff_path=pseudo_diff_path,
-            token_budget=args.token_budget,
+            token_budget=effective_token_budget,
             graph_ctx_text=graph_ctx_text,
             output_max_tokens=args.output_max_tokens,
         )
