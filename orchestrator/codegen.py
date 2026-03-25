@@ -61,7 +61,7 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
 
 def build_prompt(origin_rtl_dir: Path, uarch_origin: Path | None, uarch_new: Path | None,
                  algo_origin: Path, algo_new: Path, graph_ctx_text: str = "",
-                 input_token_budget: int = 180000) -> str:
+                 input_token_budget: int = 60000) -> str:
     """
     input_token_budget: 전체 프롬프트 입력 토큰 상한.
     각 섹션을 예산 내에서 비례 배분해 truncate.

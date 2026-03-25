@@ -160,7 +160,7 @@ def main() -> None:
     parser.add_argument("--graph-hops", type=int, default=1,
                         help="Neo4j causal graph hop depth for regular signals (default: 1). "
                              "Output ports always use graph-hops+1.")
-    parser.add_argument("--output-max-tokens", type=int, default=8192,
+    parser.add_argument("--output-max-tokens", type=int, default=None,
                         help="Max output tokens for RTL generation LLM calls (default: 8192)")
     args = parser.parse_args()
 
@@ -254,7 +254,10 @@ def main() -> None:
             if args.token_budget != 6000  # 기본값이면 자동 계산
             else safe_input_token_budget(model_cfg)
         )
-        print(f"[flow] input token budget: {effective_token_budget} tokens")
+        effective_output_max = args.output_max_tokens or model_cfg.get("max_tokens", 8192)
+        print(f"[flow] input token budget : {effective_token_budget} tokens")
+        print(f"[flow] output max_tokens  : {effective_output_max} tokens")
+        print(f"[flow] context_window     : {model_cfg.get('context_window', 'not set')} tokens")
 
         _, verification = generate_rtl_with_retry(
             model_cfg,
