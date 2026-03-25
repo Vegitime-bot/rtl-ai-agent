@@ -511,15 +511,28 @@ def generate_rtl_patch_mode(
         causal_edges = graph_obj.get("graphs", [{}])[0].get("edges", [])
 
     # 변경 필요 블록 선택
-    selection = select_chunks(chunks, diff_signals, causal_edges, token_budget=999999)
-    target_blocks = [
-        c for c in selection.must_include
+    # diff_signals가 있으면 해당 신호 관련 블록만, 없으면 always/assign 전체 대상
+    all_logic_blocks = [
+        c for c in chunks
         if c.get("kind") in ("always", "assign", "comb", "clocked")
-        and (set(c.get("signals", [])) & diff_signals or set(c.get("lhs", [])) & diff_signals)
     ]
 
+    if diff_signals:
+        target_blocks = [
+            c for c in all_logic_blocks
+            if set(c.get("signals", [])) & diff_signals or set(c.get("lhs", [])) & diff_signals
+        ]
+        if not target_blocks:
+            # diff_signals 있지만 매칭 없으면 전체 로직 블록 대상
+            warnings.warn("[codegen/patch] diff_signals 매칭 없음 → 전체 로직 블록 대상으로 확장", stacklevel=2)
+            target_blocks = all_logic_blocks
+    else:
+        # diff_signals 없으면 전체 로직 블록 대상
+        warnings.warn("[codegen/patch] diff_signals 비어있음 → 전체 로직 블록 대상", stacklevel=2)
+        target_blocks = all_logic_blocks
+
     if not target_blocks:
-        warnings.warn("[codegen/patch] 변경 대상 블록 없음 → 일반 모드로 fallback", stacklevel=2)
+        warnings.warn("[codegen/patch] 로직 블록 없음 → 일반 모드로 fallback", stacklevel=2)
         return generate_rtl_with_retry(
             cfg, origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new,
             output, causal_graph_path=causal_graph_path,
