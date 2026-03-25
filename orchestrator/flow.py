@@ -253,7 +253,7 @@ def main() -> None:
         # token_budget: CLI 지정 없으면 context_window 기반 자동 계산
         effective_token_budget = (
             args.token_budget
-            if args.token_budget != 6000  # 기본값이면 자동 계산
+            if args.token_budget != 6000
             else safe_input_token_budget(model_cfg)
         )
         effective_output_max = args.output_max_tokens or model_cfg.get("max_tokens", 8192)
@@ -261,41 +261,59 @@ def main() -> None:
         print(f"[flow] output max_tokens  : {effective_output_max} tokens")
         print(f"[flow] context_window     : {model_cfg.get('context_window', 'not set')} tokens")
 
-        if not args.no_patch_mode:
-            print("[flow] 🩹 patch mode: 변경 블록만 생성 후 원본 병합")
-            _, verification = generate_rtl_patch_mode(
-                model_cfg,
-                origin_rtl_dir,
-                uarch_origin,
-                uarch_new,
-                algo_origin_path,
-                algo_new_path,
-                args.output_rtl,
-                causal_graph_path=causal_graph_path,
-                rtl_chunks_path=rtl_chunks_path,
-                pseudo_diff_path=pseudo_diff_path,
-                graph_ctx_text=graph_ctx_text,
-                max_retries=args.max_retries,
+        # 입력 .v 파일 목록 수집 — 각 파일마다 1:1 대응 출력
+        if origin_rtl_dir.is_dir():
+            rtl_files = sorted(
+                list(origin_rtl_dir.glob("*.v")) + list(origin_rtl_dir.glob("*.sv"))
             )
         else:
-            _, verification = generate_rtl_with_retry(
-                model_cfg,
-                origin_rtl_dir,
-                uarch_origin,
-                uarch_new,
-                algo_origin_path,
-                algo_new_path,
-                args.output_rtl,
-                causal_graph_path=causal_graph_path,
-                max_retries=args.max_retries,
-                rtl_chunks_path=rtl_chunks_path,
-                pseudo_diff_path=pseudo_diff_path,
-                token_budget=effective_token_budget,
-                graph_ctx_text=graph_ctx_text,
-                output_max_tokens=args.output_max_tokens,
-            )
-        status = verification["status"]
-        print(f"[flow] final RTL -> {args.output_rtl} ({status})")
+            rtl_files = [origin_rtl_dir]
+
+        output_dir = args.output_rtl.parent
+        all_verifications = {}
+
+        for rtl_file in rtl_files:
+            # 출력 파일: outputs/<원본파일명> (1:1 대응)
+            out_path = output_dir / rtl_file.name
+            print(f"\n[flow] 처리 중: {rtl_file.name} → {out_path}")
+
+            if not args.no_patch_mode:
+                print("[flow] 🩹 patch mode: 변경 블록만 생성 후 원본 병합")
+                _, v = generate_rtl_patch_mode(
+                    model_cfg,
+                    rtl_file,          # 단일 파일로 전달
+                    uarch_origin,
+                    uarch_new,
+                    algo_origin_path,
+                    algo_new_path,
+                    out_path,
+                    causal_graph_path=causal_graph_path,
+                    rtl_chunks_path=rtl_chunks_path,
+                    pseudo_diff_path=pseudo_diff_path,
+                    graph_ctx_text=graph_ctx_text,
+                    max_retries=args.max_retries,
+                )
+            else:
+                _, v = generate_rtl_with_retry(
+                    model_cfg,
+                    rtl_file,          # 단일 파일로 전달
+                    uarch_origin,
+                    uarch_new,
+                    algo_origin_path,
+                    algo_new_path,
+                    out_path,
+                    causal_graph_path=causal_graph_path,
+                    max_retries=args.max_retries,
+                    rtl_chunks_path=rtl_chunks_path,
+                    pseudo_diff_path=pseudo_diff_path,
+                    token_budget=effective_token_budget,
+                    graph_ctx_text=graph_ctx_text,
+                    output_max_tokens=args.output_max_tokens,
+                )
+            all_verifications[rtl_file.name] = v
+            print(f"[flow] {rtl_file.name} → {out_path} ({v['status']})")
+
+        verification = all_verifications
 
     write_report(Path(args.out), findings, plan, llm_summary)
     Path("outputs/bundle.json").write_text(json.dumps({
