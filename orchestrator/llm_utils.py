@@ -171,6 +171,43 @@ def _call_claude(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
     return "".join(chunks)
 
 
+def _hard_trim_prompt(prompt: str, max_input_tokens: int) -> str:
+    """
+    프롬프트가 max_input_tokens를 초과하면 뒷부분을 잘라 반드시 맞춤.
+    Requirements 섹션은 보존하기 위해 앞부분(RTL/algo)을 우선 자름.
+    """
+    char_limit = max_input_tokens * 4  # 4자 ≈ 1토큰
+    if len(prompt) <= char_limit:
+        return prompt
+
+    # Requirements 섹션 보존: 마지막 === Requirements === 이후를 분리
+    req_marker = "=== Requirements ==="
+    req_idx = prompt.rfind(req_marker)
+    if req_idx != -1:
+        body = prompt[:req_idx]
+        tail = prompt[req_idx:]
+        tail_chars = len(tail)
+        body_limit = char_limit - tail_chars - 100  # 여유 100자
+        if body_limit > 0:
+            trimmed_body = body[:body_limit] + "\n... [prompt trimmed to fit context window]\n"
+            result = trimmed_body + tail
+            trimmed_tokens = (len(prompt) - len(result)) // 4
+            import warnings
+            warnings.warn(
+                f"[llm] ⚠️  prompt hard-trimmed: {trimmed_tokens} tokens removed to fit context window",
+                stacklevel=4,
+            )
+            return result
+
+    # fallback: 단순 앞부분 유지
+    import warnings
+    warnings.warn(
+        f"[llm] ⚠️  prompt hard-trimmed (simple): {(len(prompt) - char_limit) // 4} tokens removed",
+        stacklevel=4,
+    )
+    return prompt[:char_limit]
+
+
 def call_llm(
     prompt: str,
     cfg: dict,
@@ -178,6 +215,13 @@ def call_llm(
     max_tokens: int | None = None,
 ) -> str:
     effective_max_tokens = max_tokens if max_tokens is not None else cfg.get("max_tokens", 1024)
+
+    # 하드 가드: context_window 설정 있으면 반드시 맞춤
+    context_window = cfg.get("context_window")
+    if context_window:
+        max_input = context_window - effective_max_tokens - 500  # 500토큰 안전 마진
+        prompt = _hard_trim_prompt(prompt, max_input)
+
     provider = cfg.get("provider", "openai").lower()
     if provider == "claude":
         return _call_claude(prompt, cfg, system_prompt, effective_max_tokens)
