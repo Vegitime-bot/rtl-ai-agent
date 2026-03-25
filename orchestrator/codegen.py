@@ -51,25 +51,44 @@ def _read_algo_sources(algo_path: Path, label: str = "Algorithm") -> str:
     raise FileNotFoundError(f"Algorithm path not found: {algo_path}")
 
 
+def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """토큰 예산 초과 시 텍스트 앞부분만 남기고 자름 (4자 ≈ 1토큰)."""
+    char_limit = max_tokens * 4
+    if len(text) <= char_limit:
+        return text
+    return text[:char_limit] + f"\n... [truncated: {len(text) // 4 - max_tokens} tokens omitted]"
+
+
 def build_prompt(origin_rtl_dir: Path, uarch_origin: Path | None, uarch_new: Path | None,
-                 algo_origin: Path, algo_new: Path, graph_ctx_text: str = "") -> str:
+                 algo_origin: Path, algo_new: Path, graph_ctx_text: str = "",
+                 input_token_budget: int = 180000) -> str:
+    """
+    input_token_budget: 전체 프롬프트 입력 토큰 상한.
+    각 섹션을 예산 내에서 비례 배분해 truncate.
+    """
+    # 섹션별 대략적 배분: RTL 40%, algo 40%, graph 10%, uarch 10%
+    rtl_budget    = int(input_token_budget * 0.40)
+    algo_budget   = int(input_token_budget * 0.40)
+    graph_budget  = int(input_token_budget * 0.10)
+    uarch_budget  = int(input_token_budget * 0.10)
+
     prompt = []
     if graph_ctx_text:
-        prompt.append(f"## Signal Causal Context (from Neo4j)\n{graph_ctx_text}\n")
+        prompt.append(f"## Signal Causal Context (from Neo4j)\n{_truncate_to_tokens(graph_ctx_text, graph_budget)}\n")
     prompt += [
         "You are an RTL engineer. Generate a new Verilog module based on the deltas.",
         "=== Original RTL ===",
-        _read_rtl_sources(origin_rtl_dir),
+        _truncate_to_tokens(_read_rtl_sources(origin_rtl_dir), rtl_budget),
     ]
     if uarch_origin is not None:
-        prompt += ["=== Micro-architecture (origin) ===", uarch_origin.read_text()]
+        prompt += ["=== Micro-architecture (origin) ===", _truncate_to_tokens(uarch_origin.read_text(), uarch_budget // 2)]
     if uarch_new is not None:
-        prompt += ["=== Micro-architecture (new) ===", uarch_new.read_text()]
+        prompt += ["=== Micro-architecture (new) ===", _truncate_to_tokens(uarch_new.read_text(), uarch_budget // 2)]
     prompt += [
         "=== Algorithm (origin) ===",
-        _read_algo_sources(algo_origin, "Algorithm origin"),
+        _truncate_to_tokens(_read_algo_sources(algo_origin, "Algorithm origin"), algo_budget // 2),
         "=== Algorithm (new) ===",
-        _read_algo_sources(algo_new, "Algorithm new"),
+        _truncate_to_tokens(_read_algo_sources(algo_new, "Algorithm new"), algo_budget // 2),
         "=== Requirements ===",
         "- Keep the same module ports unless specification says otherwise.",
         "- Implement every behavioral delta described above (ROI gate, fractional timing, TE hold, etc.).",
@@ -133,7 +152,7 @@ def build_prompt_chunked(
         )
 
         if rtl_chunks_path is None or not rtl_chunks_path.exists():
-            return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new, graph_ctx_text=graph_ctx_text), False
+            return build_prompt(origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new, graph_ctx_text=graph_ctx_text, input_token_budget=token_budget), False
 
         chunks = json.loads(rtl_chunks_path.read_text())
 
@@ -309,6 +328,8 @@ def generate_rtl_with_retry(
 
     # output_max_tokens가 None이면 yaml cfg 값 사용 (예: max_tokens: 65536)
     effective_output_tokens = output_max_tokens if output_max_tokens is not None else cfg.get("max_tokens", 8192)
+    # 입력 예산 = token_budget (flow.py에서 safe_input_token_budget으로 계산된 값)
+    input_budget = token_budget
 
     attempt = 0
     current_rtl: str = ""
@@ -321,7 +342,7 @@ def generate_rtl_with_retry(
                 rtl_chunks_path=rtl_chunks_path,
                 pseudo_diff_path=pseudo_diff_path,
                 causal_graph_path=causal_graph_path,
-                token_budget=token_budget,
+                token_budget=input_budget,
                 graph_ctx_text=graph_ctx_text,
             )
             system = "You generate production-quality synthesizable Verilog."
@@ -335,7 +356,7 @@ def generate_rtl_with_retry(
                     rtl_chunks_path=rtl_chunks_path,
                     pseudo_diff_path=pseudo_diff_path,
                     causal_graph_path=causal_graph_path,
-                    token_budget=token_budget,
+                    token_budget=input_budget,
                     graph_ctx_text=graph_ctx_text,
                 )
                 failure_header = _build_failure_section(verification, attempt)
