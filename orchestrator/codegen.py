@@ -292,16 +292,23 @@ def generate_rtl_with_retry(
     pseudo_diff_path: Path | None = None,
     token_budget: int = 6000,
     graph_ctx_text: str = "",
-    output_max_tokens: int = 8192,
+    output_max_tokens: int | None = None,
 ) -> tuple[str, dict]:
     """
     RTL을 생성하고 검증을 실행한다.
     검증 실패 시 실패 이유를 피드백으로 포함해 최대 max_retries회 재시도한다.
 
+    output_max_tokens: RTL 생성에 사용할 출력 토큰 수.
+      None이면 cfg["max_tokens"]를 그대로 사용 (yaml 설정 우선).
+      명시하면 yaml 설정보다 우선 적용.
+
     반환: (최종 RTL 문자열, 최종 verification dict)
     """
     # 지연 import — orchestrator/ 내에서만 사용
     from verify import run_checks  # type: ignore
+
+    # output_max_tokens가 None이면 yaml cfg 값 사용 (예: max_tokens: 65536)
+    effective_output_tokens = output_max_tokens if output_max_tokens is not None else cfg.get("max_tokens", 8192)
 
     attempt = 0
     current_rtl: str = ""
@@ -347,9 +354,9 @@ def generate_rtl_with_retry(
             if chunked:
                 system += " For any omitted block, reproduce it exactly as-is from origin."
 
-        result = call_llm(prompt, cfg, system_prompt=system, max_tokens=output_max_tokens)
+        result = call_llm(prompt, cfg, system_prompt=system, max_tokens=effective_output_tokens)
         current_rtl = sanitize_verilog(result)
-        current_rtl = ensure_endmodule(current_rtl, cfg, max_tokens=output_max_tokens)
+        current_rtl = ensure_endmodule(current_rtl, cfg, max_tokens=effective_output_tokens)
 
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(current_rtl)
