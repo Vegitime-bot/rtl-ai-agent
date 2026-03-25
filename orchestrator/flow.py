@@ -153,8 +153,8 @@ def main() -> None:
                         help="new 알고리즘 디렉토리 (기본: inputs/algorithm/new/)")
     parser.add_argument("--generate-rtl", action="store_true")
     parser.add_argument("--output-rtl", type=Path, default=Path("outputs/new.v"))
-    parser.add_argument("--patch-mode", action="store_true",
-                        help="변경 블록만 LLM 생성 후 원본에 병합 (토큰 대폭 절약, 기본: 전체 생성)")
+    parser.add_argument("--no-patch-mode", action="store_true",
+                        help="전체 RTL 생성 모드 사용 (기본: patch mode)")
     parser.add_argument("--max-retries", type=int, default=2,
                         help="Max re-generation attempts on verification failure (default: 2)")
     parser.add_argument("--token-budget", type=int, default=6000,
@@ -261,7 +261,7 @@ def main() -> None:
         print(f"[flow] output max_tokens  : {effective_output_max} tokens")
         print(f"[flow] context_window     : {model_cfg.get('context_window', 'not set')} tokens")
 
-        if args.patch_mode:
+        if not args.no_patch_mode:
             print("[flow] 🩹 patch mode: 변경 블록만 생성 후 원본 병합")
             _, verification = generate_rtl_patch_mode(
                 model_cfg,
