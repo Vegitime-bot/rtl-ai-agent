@@ -19,6 +19,9 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
     else:
         call_llm = None
 
+    # 요약 작업은 출력이 짧으므로 512 토큰으로 제한 (yaml max_tokens와 무관하게)
+    SUMMARY_MAX_TOKENS = 512
+
     findings: List[SpecFinding] = []
     for chunk in ma_chunks:
         content = chunk["content"]
@@ -27,6 +30,7 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
                 f"Summarize the following RTL spec chunk in 200 characters or less:\n{content}",
                 model_cfg,
                 system_prompt="You are an RTL design assistant. Be concise.",
+                max_tokens=SUMMARY_MAX_TOKENS,
             )
         else:
             summary = content[:200]
@@ -38,6 +42,7 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
                 f"Summarize the following RTL pseudo-diff in 200 characters or less:\n{pseudo_diff}",
                 model_cfg,
                 system_prompt="You are an RTL design assistant. Be concise.",
+                max_tokens=SUMMARY_MAX_TOKENS,
             )
         else:
             summary = pseudo_diff[:200]

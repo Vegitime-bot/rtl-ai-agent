@@ -22,6 +22,9 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
     else:
         call_llm = None
 
+    # 1~2문장 action plan은 짧은 출력 — 512 토큰으로 제한
+    PLAN_MAX_TOKENS = 512
+
     for module in rtl_modules:
         title = f"Review {module['module']}"
         detail = f"Check signals: {', '.join(p['name'] for p in module['ports'])}"
@@ -30,6 +33,7 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
                 f"Generate a concise natural-language action plan (1-2 sentences) for: {title}\nDetails: {detail}",
                 model_cfg,
                 system_prompt="You are an RTL design assistant. Be concise.",
+                max_tokens=PLAN_MAX_TOKENS,
             )
         else:
             action = title
@@ -43,6 +47,7 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
                 f"Generate a concise natural-language action plan (1-2 sentences) for: {title}\nDetails: {detail}",
                 model_cfg,
                 system_prompt="You are an RTL design assistant. Be concise.",
+                max_tokens=PLAN_MAX_TOKENS,
             )
         else:
             action = title
@@ -56,6 +61,7 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
                     f"Generate a concise natural-language action plan (1-2 sentences) for causal edge: {note}",
                     model_cfg,
                     system_prompt="You are an RTL design assistant. Be concise.",
+                    max_tokens=PLAN_MAX_TOKENS,
                 )
             else:
                 action = title
