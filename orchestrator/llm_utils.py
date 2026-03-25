@@ -22,11 +22,17 @@ def load_model_config(path: Path | None) -> dict | None:
     return data
 
 
+def _estimate_timeout(max_tokens: int, base: int = 60) -> int:
+    """max_tokens 기반으로 timeout(초) 동적 계산. 토큰 10개당 약 1초 여유."""
+    return max(base, base + max_tokens // 10)
+
+
 def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) -> str:
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):
         headers["Authorization"] = f"Bearer {cfg['api_key']}"
-    use_stream = cfg.get("stream", True)
+    # stream 기본값 False — 사내망/비표준 모델에서 SSE 파싱 실패로 조용히 끊기는 현상 방지
+    use_stream = cfg.get("stream", False)
     payload = {
         "model": cfg["model"],
         "messages": [
@@ -37,7 +43,7 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
         "max_tokens": max_tokens,
         "stream": use_stream,
     }
-    timeout = 120 if use_stream else 60
+    timeout = cfg.get("timeout", _estimate_timeout(max_tokens))
     resp = requests.post(
         cfg["endpoint"].rstrip("/") + "/chat/completions",
         json=payload,
@@ -77,7 +83,7 @@ def _call_claude(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
         "x-api-key": cfg.get("api_key", ""),
         "anthropic-version": cfg.get("anthropic_version", "2023-06-01"),
     }
-    use_stream = cfg.get("stream", True)
+    use_stream = cfg.get("stream", False)
     payload = {
         "model": cfg["model"],
         "system": system_prompt,
@@ -88,7 +94,7 @@ def _call_claude(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
         "temperature": cfg.get("temperature", 0.2),
         "stream": use_stream,
     }
-    timeout = 120 if use_stream else 60
+    timeout = cfg.get("timeout", _estimate_timeout(max_tokens))
     resp = requests.post(
         cfg["endpoint"].rstrip("/").removesuffix("/v1") + "/v1/messages",
         json=payload,
