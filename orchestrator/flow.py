@@ -12,7 +12,7 @@ from pathlib import Path
 from agents.plan_agent import build_plan
 from agents.report_agent import write_report
 from agents.spec_agent import analyze
-from codegen import generate_rtl, generate_rtl_with_retry
+from codegen import generate_rtl, generate_rtl_with_retry, generate_rtl_patch_mode
 from llm_utils import call_llm, load_model_config, safe_input_token_budget
 # run_checks is called inside codegen.generate_rtl_with_retry
 
@@ -153,6 +153,8 @@ def main() -> None:
                         help="new 알고리즘 디렉토리 (기본: inputs/algorithm/new/)")
     parser.add_argument("--generate-rtl", action="store_true")
     parser.add_argument("--output-rtl", type=Path, default=Path("outputs/new.v"))
+    parser.add_argument("--patch-mode", action="store_true",
+                        help="변경 블록만 LLM 생성 후 원본에 병합 (토큰 대폭 절약, 기본: 전체 생성)")
     parser.add_argument("--max-retries", type=int, default=2,
                         help="Max re-generation attempts on verification failure (default: 2)")
     parser.add_argument("--token-budget", type=int, default=6000,
@@ -259,22 +261,39 @@ def main() -> None:
         print(f"[flow] output max_tokens  : {effective_output_max} tokens")
         print(f"[flow] context_window     : {model_cfg.get('context_window', 'not set')} tokens")
 
-        _, verification = generate_rtl_with_retry(
-            model_cfg,
-            origin_rtl_dir,
-            uarch_origin,
-            uarch_new,
-            algo_origin_path,
-            algo_new_path,
-            args.output_rtl,
-            causal_graph_path=causal_graph_path,
-            max_retries=args.max_retries,
-            rtl_chunks_path=rtl_chunks_path,
-            pseudo_diff_path=pseudo_diff_path,
-            token_budget=effective_token_budget,
-            graph_ctx_text=graph_ctx_text,
-            output_max_tokens=args.output_max_tokens,
-        )
+        if args.patch_mode:
+            print("[flow] 🩹 patch mode: 변경 블록만 생성 후 원본 병합")
+            _, verification = generate_rtl_patch_mode(
+                model_cfg,
+                origin_rtl_dir,
+                uarch_origin,
+                uarch_new,
+                algo_origin_path,
+                algo_new_path,
+                args.output_rtl,
+                causal_graph_path=causal_graph_path,
+                rtl_chunks_path=rtl_chunks_path,
+                pseudo_diff_path=pseudo_diff_path,
+                graph_ctx_text=graph_ctx_text,
+                max_retries=args.max_retries,
+            )
+        else:
+            _, verification = generate_rtl_with_retry(
+                model_cfg,
+                origin_rtl_dir,
+                uarch_origin,
+                uarch_new,
+                algo_origin_path,
+                algo_new_path,
+                args.output_rtl,
+                causal_graph_path=causal_graph_path,
+                max_retries=args.max_retries,
+                rtl_chunks_path=rtl_chunks_path,
+                pseudo_diff_path=pseudo_diff_path,
+                token_budget=effective_token_budget,
+                graph_ctx_text=graph_ctx_text,
+                output_max_tokens=args.output_max_tokens,
+            )
         status = verification["status"]
         print(f"[flow] final RTL -> {args.output_rtl} ({status})")
 
