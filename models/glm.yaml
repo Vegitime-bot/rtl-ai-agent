@@ -1,0 +1,9 @@
+# GLM 4.7 사내망 설정
+provider: openai
+endpoint: http://사내망주소/v1   # ← 실제 주소로 교체
+model: GLM4.7
+max_tokens: 65536
+context_window: 202752
+temperature: 0.2
+timeout: 7200
+# api_key: ""  # 필요 시 설정 또는 MODEL_API_KEY 환경변수 사용

@@ -58,8 +58,8 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  RTL 생성 시작"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-python orchestrator/flow.py --generate-rtl "$@"
-# 기본이 patch mode. 전체 생성 원하면: ./run_pipeline.sh --no-patch-mode --model-config ...
+python orchestrator/flow.py --generate-rtl --model-config models/glm.yaml "$@"
+# 기본이 patch mode. 전체 생성 원하면: ./run_pipeline.sh --no-patch-mode
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
