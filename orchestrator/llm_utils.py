@@ -66,6 +66,14 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
         timeout=timeout,
         stream=use_stream,
     )
+    if not resp.ok:
+        try:
+            err_body = resp.json()
+        except Exception:
+            err_body = resp.text
+        raise RuntimeError(
+            f"[llm] API {resp.status_code} | max_tokens={max_tokens} | body: {err_body}"
+        )
     resp.raise_for_status()
     if not use_stream:
         data = resp.json()
