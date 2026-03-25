@@ -147,38 +147,36 @@ def get_causal_context_nhop(
 
     try:
         with driver.session(database=None) as session:
-            # Neo4j Cypher로 n-hop 경로를 한 번에 조회
-            # DRIVES 방향: src -[:DRIVES]-> dst
+            # Neo4j Cypher에서 가변 경로 길이는 파라미터 불가 → 숫자 직접 포맷팅
+            hops_str = str(n_hops)
             for signal in signals:
                 # n-hop upstream (drivers)
                 upstream = session.run(
-                    """
-                    MATCH path = (src:Signal {module: $module})
-                          -[:DRIVES*1..$hops]->
-                          (dst:Signal {module: $module, name: $signal})
+                    f"""
+                    MATCH path = (src:Signal {{module: $module}})
+                          -[:DRIVES*1..{hops_str}]->
+                          (dst:Signal {{module: $module, name: $signal}})
                     WITH src, length(path) AS hop
                     RETURN src.name AS name, min(hop) AS min_hop
                     ORDER BY min_hop, src.name
                     """,
                     module=module,
                     signal=signal,
-                    hops=n_hops,
                 )
                 drivers_with_hop = [(row["name"], row["min_hop"]) for row in upstream]
 
                 # n-hop downstream (dependents)
                 downstream = session.run(
-                    """
-                    MATCH path = (src:Signal {module: $module, name: $signal})
-                          -[:DRIVES*1..$hops]->
-                          (dst:Signal {module: $module})
+                    f"""
+                    MATCH path = (src:Signal {{module: $module, name: $signal}})
+                          -[:DRIVES*1..{hops_str}]->
+                          (dst:Signal {{module: $module}})
                     WITH dst, length(path) AS hop
                     RETURN dst.name AS name, min(hop) AS min_hop
                     ORDER BY min_hop, dst.name
                     """,
                     module=module,
                     signal=signal,
-                    hops=n_hops,
                 )
                 dependents_with_hop = [(row["name"], row["min_hop"]) for row in downstream]
 
