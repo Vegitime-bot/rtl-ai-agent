@@ -34,54 +34,53 @@ def _load_chunks_from_json(path: Path) -> list[dict]:
     chunks = []
     if "sections" in data:
         for sec in data["sections"]:
-            chunks.append({
-                "kind": "uarch",
-                "source": str(path),
-                "ref": sec.get("section", ""),
-                "text": sec.get("body", ""),
-            })
+            body = sec.get("body", "")
+            ref = sec.get("section", "")
+            # 섹션이 너무 크면 재분할
+            chunks.extend(_split_by_chars(body, str(path), ref, "uarch"))
     elif "diff" in data:
-        chunks.append({
-            "kind": "pseudo_diff",
-            "source": str(path),
-            "ref": data.get("new", ""),
-            "text": "\n".join(data.get("diff", [])),
-        })
+        diff_text = "\n".join(data.get("diff", []))
+        chunks.extend(_split_by_chars(diff_text, str(path), data.get("new", ""), "pseudo_diff"))
     elif "modules" in data:
         for mod in data["modules"]:
-            chunks.append({
-                "kind": "rtl",
-                "source": str(path),
-                "ref": mod.get("module", ""),
-                "text": json.dumps(mod),
-            })
+            mod_text = json.dumps(mod)
+            chunks.extend(_split_by_chars(mod_text, str(path), mod.get("module", ""), "rtl"))
+    return chunks
+
+
+_MAX_CHUNK_CHARS = 8000  # ~2000 토큰 상한 (4자 ≈ 1토큰)
+
+
+def _split_by_chars(text: str, source: str, ref_prefix: str, kind: str) -> list[dict]:
+    """텍스트를 _MAX_CHUNK_CHARS 단위로 분할해 청크 리스트 반환."""
+    if len(text) <= _MAX_CHUNK_CHARS:
+        return [{"kind": kind, "source": source, "ref": ref_prefix, "text": text}]
+    chunks = []
+    for i, start in enumerate(range(0, len(text), _MAX_CHUNK_CHARS)):
+        chunks.append({
+            "kind": kind,
+            "source": source,
+            "ref": f"{ref_prefix}_part{i}",
+            "text": text[start:start + _MAX_CHUNK_CHARS],
+        })
     return chunks
 
 
 def _load_chunks_from_py(path: Path) -> list[dict]:
-    """Python 파일 → 함수 단위 청크."""
+    """Python 파일 → 함수/클래스 단위 청크. 청크가 크면 재분할."""
     source = path.read_text()
     chunks = []
     import re
-    # def 단위로 분할
-    fn_pattern = re.compile(r'^(def \w+.*?)(?=^def |\Z)', re.M | re.S)
+    # def / class 단위로 분할
+    fn_pattern = re.compile(r'^((?:def|class) \w+.*?)(?=^(?:def|class) |\Z)', re.M | re.S)
     for m in fn_pattern.finditer(source):
         fn_text = m.group(1).strip()
-        fn_name_m = re.match(r'def (\w+)', fn_text)
+        fn_name_m = re.match(r'(?:def|class) (\w+)', fn_text)
         fn_name = fn_name_m.group(1) if fn_name_m else "unknown"
-        chunks.append({
-            "kind": "algorithm",
-            "source": str(path),
-            "ref": fn_name,
-            "text": fn_text,
-        })
+        chunks.extend(_split_by_chars(fn_text, str(path), fn_name, "algorithm"))
     if not chunks:
-        chunks.append({
-            "kind": "algorithm",
-            "source": str(path),
-            "ref": path.stem,
-            "text": source,
-        })
+        # def/class 없으면 전체를 크기 단위로 분할
+        chunks.extend(_split_by_chars(source, str(path), path.stem, "algorithm"))
     return chunks
 
 
