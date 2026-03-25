@@ -160,6 +160,8 @@ def main() -> None:
     parser.add_argument("--graph-hops", type=int, default=1,
                         help="Neo4j causal graph hop depth for regular signals (default: 1). "
                              "Output ports always use graph-hops+1.")
+    parser.add_argument("--output-max-tokens", type=int, default=8192,
+                        help="Max output tokens for RTL generation LLM calls (default: 8192)")
     args = parser.parse_args()
 
     origin_rtl_dir = args.origin_rtl_dir
@@ -260,6 +262,7 @@ def main() -> None:
             pseudo_diff_path=pseudo_diff_path,
             token_budget=args.token_budget,
             graph_ctx_text=graph_ctx_text,
+            output_max_tokens=args.output_max_tokens,
         )
         status = verification["status"]
         print(f"[flow] final RTL -> {args.output_rtl} ({status})")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -21,10 +22,11 @@ def load_model_config(path: Path | None) -> dict | None:
     return data
 
 
-def _call_openai(prompt: str, cfg: dict, system_prompt: str) -> str:
+def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) -> str:
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):
         headers["Authorization"] = f"Bearer {cfg['api_key']}"
+    use_stream = cfg.get("stream", True)
     payload = {
         "model": cfg["model"],
         "messages": [
@@ -32,51 +34,104 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str) -> str:
             {"role": "user", "content": prompt},
         ],
         "temperature": cfg.get("temperature", 0.2),
-        "max_tokens": cfg.get("max_tokens", 1024),
+        "max_tokens": max_tokens,
+        "stream": use_stream,
     }
+    timeout = 120 if use_stream else 60
     resp = requests.post(
         cfg["endpoint"].rstrip("/") + "/chat/completions",
         json=payload,
         headers=headers,
-        timeout=60,
+        timeout=timeout,
+        stream=use_stream,
     )
     resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    if not use_stream:
+        return resp.json()["choices"][0]["message"]["content"]
+
+    chunks: list[str] = []
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if not line.startswith("data:"):
+            continue
+        data_str = line[5:].strip()
+        if data_str == "[DONE]":
+            break
+        try:
+            obj = json.loads(data_str)
+            delta = obj["choices"][0].get("delta", {})
+            content = delta.get("content")
+            if content:
+                chunks.append(content)
+        except (KeyError, json.JSONDecodeError):
+            pass
+    return "".join(chunks)
 
 
-def _call_claude(prompt: str, cfg: dict, system_prompt: str) -> str:
+def _call_claude(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) -> str:
     headers = {
         "Content-Type": "application/json",
         "x-api-key": cfg.get("api_key", ""),
         "anthropic-version": cfg.get("anthropic_version", "2023-06-01"),
     }
+    use_stream = cfg.get("stream", True)
     payload = {
         "model": cfg["model"],
         "system": system_prompt,
         "messages": [
             {"role": "user", "content": [{"type": "text", "text": prompt}]},
         ],
-        "max_tokens": cfg.get("max_tokens", 1024),
+        "max_tokens": max_tokens,
         "temperature": cfg.get("temperature", 0.2),
+        "stream": use_stream,
     }
+    timeout = 120 if use_stream else 60
     resp = requests.post(
         cfg["endpoint"].rstrip("/").removesuffix("/v1") + "/v1/messages",
         json=payload,
         headers=headers,
-        timeout=60,
+        timeout=timeout,
+        stream=use_stream,
     )
     resp.raise_for_status()
-    data = resp.json()
-    # Claude responses are arrays of content blocks; pick first text block
-    for block in data.get("content", []):
-        if block.get("type") == "text":
-            return block.get("text", "")
-    return ""
+    if not use_stream:
+        data = resp.json()
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                return block.get("text", "")
+        return ""
+
+    chunks: list[str] = []
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if not line.startswith("data:"):
+            continue
+        data_str = line[5:].strip()
+        try:
+            obj = json.loads(data_str)
+            if obj.get("type") == "content_block_delta":
+                delta = obj.get("delta", {})
+                if delta.get("type") == "text_delta":
+                    chunks.append(delta.get("text", ""))
+        except json.JSONDecodeError:
+            pass
+    return "".join(chunks)
 
 
-def call_llm(prompt: str, cfg: dict, system_prompt: str = "You are an RTL design assistant.") -> str:
+def call_llm(
+    prompt: str,
+    cfg: dict,
+    system_prompt: str = "You are an RTL design assistant.",
+    max_tokens: int | None = None,
+) -> str:
+    effective_max_tokens = max_tokens if max_tokens is not None else cfg.get("max_tokens", 1024)
     provider = cfg.get("provider", "openai").lower()
     if provider == "claude":
-        return _call_claude(prompt, cfg, system_prompt)
-    return _call_openai(prompt, cfg, system_prompt)
+        return _call_claude(prompt, cfg, system_prompt, effective_max_tokens)
+    return _call_openai(prompt, cfg, system_prompt, effective_max_tokens)
