@@ -19,33 +19,40 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
     else:
         call_llm = None
 
-    # 요약 작업은 출력이 짧으므로 512 토큰으로 제한 (yaml max_tokens와 무관하게)
-    SUMMARY_MAX_TOKENS = 512
+    # 요약 작업 출력 토큰 상한 — 모델이 장황하게 출력하는 경우를 대비해 1024로 설정
+    SUMMARY_MAX_TOKENS = 1024
 
     findings: List[SpecFinding] = []
     for chunk in ma_chunks:
         content = chunk["content"]
         if call_llm is not None:
-            summary = call_llm(
-                f"Summarize the following RTL spec chunk in 200 characters or less:\n{content}",
-                model_cfg,
-                system_prompt="You are an RTL design assistant. Be concise.",
-                max_tokens=SUMMARY_MAX_TOKENS,
-            )
+            try:
+                summary = call_llm(
+                    f"Summarize the following RTL spec chunk in 2-3 sentences:\n{content}",
+                    model_cfg,
+                    system_prompt="You are an RTL design assistant. Be concise. Reply in 2-3 sentences only.",
+                    max_tokens=SUMMARY_MAX_TOKENS,
+                )
+            except Exception:
+                # LLM 실패 시 텍스트 직접 truncate
+                summary = content[:400]
         else:
-            summary = content[:200]
+            summary = content[:400]
         findings.append(SpecFinding(source=chunk["ref"], summary=summary))
 
     if pseudo_diff:
         if call_llm is not None:
-            summary = call_llm(
-                f"Summarize the following RTL pseudo-diff in 200 characters or less:\n{pseudo_diff}",
-                model_cfg,
-                system_prompt="You are an RTL design assistant. Be concise.",
-                max_tokens=SUMMARY_MAX_TOKENS,
-            )
+            try:
+                summary = call_llm(
+                    f"Summarize the following RTL pseudo-diff in 2-3 sentences:\n{pseudo_diff}",
+                    model_cfg,
+                    system_prompt="You are an RTL design assistant. Be concise. Reply in 2-3 sentences only.",
+                    max_tokens=SUMMARY_MAX_TOKENS,
+                )
+            except Exception:
+                summary = pseudo_diff[:400]
         else:
-            summary = pseudo_diff[:200]
+            summary = pseudo_diff[:400]
         findings.append(SpecFinding(source="pseudo_diff", summary=summary))
 
     return findings
