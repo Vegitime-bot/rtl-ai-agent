@@ -22,49 +22,47 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
     else:
         call_llm = None
 
-    # 1~2문장 action plan은 짧은 출력 — 512 토큰으로 제한
     PLAN_MAX_TOKENS = 512
+
+    def _safe_action(prompt_text: str, fallback: str) -> str:
+        if call_llm is None:
+            return fallback
+        try:
+            result = call_llm(
+                prompt_text,
+                model_cfg,
+                system_prompt="You are an RTL design assistant. Be concise.",
+                max_tokens=PLAN_MAX_TOKENS,
+            )
+            return result if result else fallback
+        except Exception:
+            return fallback
 
     for module in rtl_modules:
         title = f"Review {module['module']}"
         detail = f"Check signals: {', '.join(p['name'] for p in module['ports'])}"
-        if call_llm is not None:
-            action = call_llm(
-                f"Generate a concise natural-language action plan (1-2 sentences) for: {title}\nDetails: {detail}",
-                model_cfg,
-                system_prompt="You are an RTL design assistant. Be concise.",
-                max_tokens=PLAN_MAX_TOKENS,
-            )
-        else:
-            action = title
+        action = _safe_action(
+            f"Generate a concise natural-language action plan (1-2 sentences) for: {title}\nDetails: {detail}",
+            fallback=title,
+        )
         plan.append(PlanItem(title=title, detail=detail, action=action))
 
     if spec_findings:
         title = "Address spec deltas"
-        detail = "; ".join(spec_findings)
-        if call_llm is not None:
-            action = call_llm(
-                f"Generate a concise natural-language action plan (1-2 sentences) for: {title}\nDetails: {detail}",
-                model_cfg,
-                system_prompt="You are an RTL design assistant. Be concise.",
-                max_tokens=PLAN_MAX_TOKENS,
-            )
-        else:
-            action = title
+        detail = "; ".join(f for f in spec_findings if f)  # None 필터링
+        action = _safe_action(
+            f"Generate a concise natural-language action plan (1-2 sentences) for: {title}\nDetails: {detail}",
+            fallback=title,
+        )
         plan.append(PlanItem(title=title, detail=detail, action=action))
 
     if graph_notes:
         for note in graph_notes:
             title = "Causal edge"
-            if call_llm is not None:
-                action = call_llm(
-                    f"Generate a concise natural-language action plan (1-2 sentences) for causal edge: {note}",
-                    model_cfg,
-                    system_prompt="You are an RTL design assistant. Be concise.",
-                    max_tokens=PLAN_MAX_TOKENS,
-                )
-            else:
-                action = title
+            action = _safe_action(
+                f"Generate a concise natural-language action plan (1-2 sentences) for causal edge: {note}",
+                fallback=title,
+            )
             plan.append(PlanItem(title=title, detail=note, action=action))
 
     return plan

@@ -19,40 +19,34 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
     else:
         call_llm = None
 
-    # 요약 작업 출력 토큰 상한 — 모델이 장황하게 출력하는 경우를 대비해 1024로 설정
     SUMMARY_MAX_TOKENS = 1024
+    # 입력 청크를 LLM에 넣기 전 최대 글자수 제한 (4자 ≈ 1토큰, 3000토큰 분량)
+    INPUT_CHAR_LIMIT = 12000
+
+    def _safe_summary(text: str, source: str) -> str:
+        """LLM 요약 시도, 실패하거나 None 반환 시 텍스트 직접 truncate."""
+        truncated = text[:INPUT_CHAR_LIMIT]
+        if call_llm is None:
+            return truncated[:400]
+        try:
+            result = call_llm(
+                f"Summarize the following RTL spec in 2-3 sentences:\n{truncated}",
+                model_cfg,
+                system_prompt="You are an RTL design assistant. Be concise. Reply in 2-3 sentences only.",
+                max_tokens=SUMMARY_MAX_TOKENS,
+            )
+            return result if result else truncated[:400]
+        except Exception:
+            return truncated[:400]
 
     findings: List[SpecFinding] = []
     for chunk in ma_chunks:
         content = chunk["content"]
-        if call_llm is not None:
-            try:
-                summary = call_llm(
-                    f"Summarize the following RTL spec chunk in 2-3 sentences:\n{content}",
-                    model_cfg,
-                    system_prompt="You are an RTL design assistant. Be concise. Reply in 2-3 sentences only.",
-                    max_tokens=SUMMARY_MAX_TOKENS,
-                )
-            except Exception:
-                # LLM 실패 시 텍스트 직접 truncate
-                summary = content[:400]
-        else:
-            summary = content[:400]
+        summary = _safe_summary(content, chunk["ref"])
         findings.append(SpecFinding(source=chunk["ref"], summary=summary))
 
     if pseudo_diff:
-        if call_llm is not None:
-            try:
-                summary = call_llm(
-                    f"Summarize the following RTL pseudo-diff in 2-3 sentences:\n{pseudo_diff}",
-                    model_cfg,
-                    system_prompt="You are an RTL design assistant. Be concise. Reply in 2-3 sentences only.",
-                    max_tokens=SUMMARY_MAX_TOKENS,
-                )
-            except Exception:
-                summary = pseudo_diff[:400]
-        else:
-            summary = pseudo_diff[:400]
+        summary = _safe_summary(pseudo_diff, "pseudo_diff")
         findings.append(SpecFinding(source="pseudo_diff", summary=summary))
 
     return findings
