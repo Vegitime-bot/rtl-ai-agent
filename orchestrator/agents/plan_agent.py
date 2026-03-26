@@ -22,7 +22,7 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
     else:
         call_llm = None
 
-    PLAN_MAX_TOKENS = 512
+    PLAN_MAX_TOKENS = model_cfg.get("max_tokens", 2048) if model_cfg else 2048
 
     def _safe_action(prompt_text: str, fallback: str) -> str:
         if call_llm is None:

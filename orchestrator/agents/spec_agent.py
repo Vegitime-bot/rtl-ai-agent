@@ -19,7 +19,7 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
     else:
         call_llm = None
 
-    SUMMARY_MAX_TOKENS = 1024
+    SUMMARY_MAX_TOKENS = model_cfg.get("max_tokens", 2048) if model_cfg else 2048
     # 입력 청크를 LLM에 넣기 전 최대 글자수 제한 (4자 ≈ 1토큰, 3000토큰 분량)
     INPUT_CHAR_LIMIT = 12000
 
