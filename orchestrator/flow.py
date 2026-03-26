@@ -14,6 +14,7 @@ from agents.report_agent import write_report
 from agents.spec_agent import analyze
 from codegen import generate_rtl, generate_rtl_with_retry, generate_rtl_patch_mode
 from llm_utils import call_llm, load_model_config, safe_input_token_budget
+from lsp_client import get_rtl_context, format_lsp_context
 # run_checks is called inside codegen.generate_rtl_with_retry
 
 
@@ -197,6 +198,21 @@ def main() -> None:
     ]
 
     model_cfg = load_model_config(args.model_config)
+
+    # --- LSP RTL 구조 컨텍스트 조회 ---
+    if origin_rtl_dir.is_dir():
+        lsp_rtl_files = sorted(
+            list(origin_rtl_dir.glob("*.v")) + list(origin_rtl_dir.glob("*.sv"))
+        )
+    else:
+        lsp_rtl_files = [origin_rtl_dir]
+    lsp_summaries = get_rtl_context(lsp_rtl_files, cfg=model_cfg)
+    lsp_ctx_text = format_lsp_context(lsp_summaries)
+    if lsp_ctx_text:
+        print(f"[flow] LSP context: {len(lsp_summaries)} module(s) loaded")
+    else:
+        print("[flow] LSP context: skip (서버 없음 또는 응답 없음)")
+
     findings = analyze(ma_chunks, "\n".join(pseudo_diff), model_cfg=model_cfg)
     graph_notes = summarize_graphs(graph_data)
     plan = build_plan(rtl_data.get("modules", []), [f.summary for f in findings], graph_notes, model_cfg=model_cfg)
@@ -224,6 +240,11 @@ def main() -> None:
     llm_summary = None
     if model_cfg:
         prompt = "Summarize the following findings and action plan:\n"
+        if lsp_ctx_text:
+            prompt = (
+                f"{lsp_ctx_text}\n\n"
+                + prompt
+            )
         if graph_ctx_text:
             prompt = (
                 "## Graph Context (from Neo4j)\n"
@@ -290,7 +311,7 @@ def main() -> None:
                     causal_graph_path=causal_graph_path,
                     rtl_chunks_path=rtl_chunks_path,
                     pseudo_diff_path=pseudo_diff_path,
-                    graph_ctx_text=graph_ctx_text,
+                    graph_ctx_text="\n\n".join(filter(None, [lsp_ctx_text, graph_ctx_text])),
                     max_retries=args.max_retries,
                 )
             else:
@@ -307,7 +328,7 @@ def main() -> None:
                     rtl_chunks_path=rtl_chunks_path,
                     pseudo_diff_path=pseudo_diff_path,
                     token_budget=effective_token_budget,
-                    graph_ctx_text=graph_ctx_text,
+                    graph_ctx_text="\n\n".join(filter(None, [lsp_ctx_text, graph_ctx_text])),
                     output_max_tokens=args.output_max_tokens,
                 )
             all_verifications[rtl_file.name] = v
