@@ -545,8 +545,15 @@ def generate_rtl_patch_mode(
     # 원본 RTL 읽기
     origin_rtl_text = _read_rtl_sources(origin_rtl_dir)
 
+    import time as _time
+    # 블록 간 최소 대기 간격 (초) — rate limit 방지. yaml에 req_interval로 override 가능
+    _req_interval = cfg.get("req_interval", 1.0)
+
     patches: list[dict] = []
     for i, block in enumerate(target_blocks):
+        if i > 0:
+            _time.sleep(_req_interval)
+
         block_text = block.get("text", "")
         block_signals = list(set(block.get("signals", [])) | set(block.get("lhs", [])))
         block_tokens = max(len(block_text) // 4 * 2, 2048)

@@ -43,6 +43,8 @@ def _estimate_timeout(max_tokens: int, base: int = 60) -> int:
 
 
 def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) -> str:
+    import time
+
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):
         headers["Authorization"] = f"Bearer {cfg['api_key']}"
@@ -59,13 +61,24 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
         "stream": use_stream,
     }
     timeout = cfg.get("timeout", _estimate_timeout(max_tokens))
-    resp = requests.post(
-        cfg["endpoint"].rstrip("/") + "/chat/completions",
-        json=payload,
-        headers=headers,
-        timeout=timeout,
-        stream=use_stream,
-    )
+    url = cfg["endpoint"].rstrip("/") + "/chat/completions"
+
+    # 429 Rate Limit 자동 재시도 (최대 5회, 지수 backoff)
+    max_rate_retries = cfg.get("rate_limit_retries", 5)
+    rate_retry_base = cfg.get("rate_limit_retry_base", 60)  # 기본 대기 60초
+
+    for attempt in range(max_rate_retries + 1):
+        resp = requests.post(url, json=payload, headers=headers, timeout=timeout, stream=use_stream)
+        if resp.status_code == 429:
+            if attempt < max_rate_retries:
+                # Retry-After 헤더가 있으면 우선 사용, 없으면 지수 backoff
+                retry_after = resp.headers.get("Retry-After")
+                wait = int(retry_after) if retry_after and retry_after.isdigit() else rate_retry_base * (2 ** attempt)
+                print(f"[llm] 429 Rate Limit — {wait}초 후 재시도 ({attempt + 1}/{max_rate_retries})...")
+                time.sleep(wait)
+                continue
+        break  # 429 아니면 루프 탈출
+
     if not resp.ok:
         try:
             err_body = resp.json()
