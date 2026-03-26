@@ -52,10 +52,21 @@ def _lhs_set(chunk: dict) -> set[str]:
 # ────────────────────────────────────────────
 
 VL_KEYWORDS = {
+    # Verilog/SystemVerilog 키워드
     'begin', 'end', 'if', 'else', 'case', 'casex', 'casez', 'endcase',
     'default', 'assign', 'always', 'posedge', 'negedge', 'or', 'and',
     'not', 'wire', 'reg', 'integer', 'parameter', 'localparam', 'module',
     'endmodule', 'input', 'output', 'inout', 'initial', 'for', 'while',
+    # Python 키워드 (algorithm diff에서 유입되는 것 차단)
+    'def', 'return', 'class', 'import', 'from', 'as', 'with', 'pass',
+    'raise', 'try', 'except', 'finally', 'yield', 'lambda', 'global',
+    'nonlocal', 'del', 'assert', 'in', 'is', 'not', 'and', 'or',
+    'True', 'False', 'None', 'self', 'cls',
+    # Python 내장 타입/함수 (신호명으로 오인되는 것)
+    'str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple',
+    'len', 'range', 'print', 'type', 'sum', 'min', 'max', 'abs',
+    'all', 'any', 'zip', 'map', 'filter', 'enumerate', 'sorted',
+    'append', 'extend', 'object',
 }
 
 IDENT_RE = re.compile(r'\b([A-Za-z_]\w*)\b')

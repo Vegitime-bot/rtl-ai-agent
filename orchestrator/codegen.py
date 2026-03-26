@@ -425,7 +425,21 @@ def _build_block_prompt(
     pseudo_diff_text: str,
     cfg: dict,
 ) -> str:
-    """변경이 필요한 단일 블록에 대한 LLM 프롬프트 생성."""
+    """
+    변경이 필요한 단일 블록에 대한 LLM 프롬프트 생성.
+    입력 토큰 예산: context_window - block_tokens - 500 마진
+    """
+    context_window = cfg.get("context_window", 8192)
+    block_tokens = min(max(len(block_text) // 4 * 2 + 512, 1024), cfg.get("max_tokens", 8192))
+    # 입력 예산 = 전체 컨텍스트 - 출력 예산 - 안전 마진
+    input_budget = max(context_window - block_tokens - 500, 2000)
+
+    # 섹션별 토큰 배분: algo 50%, graph 20%, uarch 20%, diff 10%
+    algo_budget   = int(input_budget * 0.50)
+    graph_budget  = int(input_budget * 0.20)
+    uarch_budget  = int(input_budget * 0.20)
+    diff_budget   = int(input_budget * 0.10)
+
     parts = [
         "Rewrite the following Verilog block based on the spec changes.",
         "Return ONLY the rewritten block code. No module wrapper, no markdown fences.",
@@ -434,15 +448,15 @@ def _build_block_prompt(
         block_text,
     ]
     if graph_ctx_text:
-        parts += ["", "=== Signal Causal Context ===", graph_ctx_text]
+        parts += ["", "=== Signal Causal Context ===", _truncate_to_tokens(graph_ctx_text, graph_budget)]
     if pseudo_diff_text:
-        parts += ["", "=== Spec Delta (pseudo-diff) ===", pseudo_diff_text[:4000]]
+        parts += ["", "=== Spec Delta (pseudo-diff) ===", _truncate_to_tokens(pseudo_diff_text, diff_budget)]
     if uarch_new and uarch_new.exists():
-        parts += ["", "=== Micro-architecture (new) ===", _truncate_to_tokens(uarch_new.read_text(), 2000)]
+        parts += ["", "=== Micro-architecture (new) ===", _truncate_to_tokens(uarch_new.read_text(), uarch_budget)]
     parts += [
         "",
         "=== Algorithm (new) ===",
-        _truncate_to_tokens(_read_algo_sources(algo_new, "Algorithm new"), 4000),
+        _truncate_to_tokens(_read_algo_sources(algo_new, "Algorithm new"), algo_budget),
         "",
         "=== Requirements ===",
         f"- Signals in this block: {', '.join(block_signals)}",
