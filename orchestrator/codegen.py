@@ -556,7 +556,11 @@ def generate_rtl_patch_mode(
 
         block_text = block.get("text", "")
         block_signals = list(set(block.get("signals", [])) | set(block.get("lhs", [])))
-        block_tokens = max(len(block_text) // 4 * 3, 4096)  # 원본 블록 크기의 3배 또는 최소 4096
+        # 출력 토큰: 원본 블록의 2배 + 여유 512, 최소 1024, 최대 cfg max_tokens
+        block_tokens = min(
+            max(len(block_text) // 4 * 2 + 512, 1024),
+            cfg.get("max_tokens", 8192),
+        )
 
         print(f"[codegen/patch] 블록 {i+1}/{len(target_blocks)}: "
               f"L{block.get('line_start')}-{block.get('line_end')} "
