@@ -53,13 +53,17 @@ def apply_patch(rtl_text: str, patches: list[dict]) -> str:
 
     # line 기반 치환 (역순: 뒤 라인부터 처리해야 앞 라인 번호가 안 밀림)
     for idx, patch in sorted(line_patches, key=lambda x: -(x[1]["chunk"].get("line_start", 0))):
-        pos = find_block(rtl_text, patch["chunk"])
+        chunk = patch["chunk"]
+        pos = find_block(rtl_text, chunk)
+        print(f"[patch_rtl] line기반 치환 시도: L{chunk.get('line_start')}-{chunk.get('line_end')} → pos={pos}")
         if pos is None:
+            print(f"[patch_rtl] ❌ find_block 실패 (라인 범위 초과?)")
             continue
         start, end = pos
         replacement = patch.get("replacement", "")
         if not replacement.endswith("\n"):
             replacement += "\n"
+        print(f"[patch_rtl] ✅ line기반 치환 성공: chars {start}-{end} → {len(replacement)}chars")
         rtl_text = rtl_text[:start] + replacement + rtl_text[end:]
         applied_indices.add(idx)
 
