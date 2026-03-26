@@ -9,4 +9,5 @@ timeout: 7200
 req_interval: 1.0
 rate_limit_retries: 5
 rate_limit_retry_base: 60
+# llm_log: "logs/llm.jsonl"  # 주석 해제 시 LLM 요청/응답 로그 활성화
 # api_key: ""  # 필요 시 설정 또는 MODEL_API_KEY 환경변수 사용

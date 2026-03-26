@@ -2,10 +2,26 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 import requests
 import yaml
+
+
+# ── LLM 대화 로깅 ────────────────────────────────
+# yaml에 llm_log: "logs/llm.jsonl" 설정 시 활성화
+# 각 요청/응답을 JSONL 형식으로 append
+
+def _log_llm(cfg: dict, entry: dict) -> None:
+    """cfg에 llm_log 경로가 있으면 JSONL로 append."""
+    log_path = cfg.get("llm_log")
+    if not log_path:
+        return
+    path = Path(log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def load_model_config(path: Path | None) -> dict | None:
@@ -107,7 +123,19 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
                 "yaml의 max_tokens 값을 높이거나 --output-max-tokens를 늘리세요.",
                 stacklevel=3,
             )
-        return choice["message"]["content"] or ""
+        content = choice["message"]["content"] or ""
+        _log_llm(cfg, {
+            "ts": datetime.utcnow().isoformat(),
+            "provider": "openai",
+            "model": cfg.get("model"),
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "finish_reason": finish_reason,
+            "max_tokens_requested": max_tokens,
+            "prompt": prompt[:500],   # 앞 500자만 기록 (로그 크기 제한)
+            "response": content[:500],
+        })
+        return content
 
     chunks: list[str] = []
     for line in resp.iter_lines():
@@ -159,10 +187,24 @@ def _call_claude(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
     resp.raise_for_status()
     if not use_stream:
         data = resp.json()
+        content = ""
         for block in data.get("content", []):
             if block.get("type") == "text":
-                return block.get("text", "")
-        return ""
+                content = block.get("text", "")
+                break
+        usage = data.get("usage", {})
+        _log_llm(cfg, {
+            "ts": datetime.utcnow().isoformat(),
+            "provider": "claude",
+            "model": cfg.get("model"),
+            "prompt_tokens": usage.get("input_tokens"),
+            "completion_tokens": usage.get("output_tokens"),
+            "finish_reason": data.get("stop_reason"),
+            "max_tokens_requested": max_tokens,
+            "prompt": prompt[:500],
+            "response": content[:500],
+        })
+        return content
 
     chunks: list[str] = []
     for line in resp.iter_lines():
