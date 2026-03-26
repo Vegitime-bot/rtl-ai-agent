@@ -585,8 +585,10 @@ def generate_rtl_patch_mode(
         block_text = block.get("text", "")
         block_signals = list(set(block.get("signals", [])) | set(block.get("lhs", [])))
         # 출력 토큰: 원본 블록의 2배 + 여유 512, 최소 1024, 최대 cfg max_tokens
+        # 블록 출력 토큰: 원본 크기 + 여유 256, 최소 512
+        # continuation으로 이어붙이므로 한 번에 많이 요청할 필요 없음
         block_tokens = min(
-            max(len(block_text) // 4 * 2 + 512, 1024),
+            max(len(block_text) // 4 + 256, 512),
             cfg.get("max_tokens", 8192),
         )
 
