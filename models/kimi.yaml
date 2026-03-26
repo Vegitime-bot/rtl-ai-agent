@@ -1,0 +1,12 @@
+# Kimi k2.5 설정
+provider: openai          # OpenAI 호환 API
+endpoint: https://api.moonshot.cn/v1  # ← 실제 엔드포인트로 교체
+model: moonshot-v1-256k   # ← 실제 모델명으로 교체
+max_tokens: 8192
+context_window: 256000
+temperature: 0.2
+timeout: 7200
+req_interval: 1.0
+rate_limit_retries: 5
+rate_limit_retry_base: 60
+# api_key: ""  # 필요 시 설정 또는 MODEL_API_KEY 환경변수 사용
