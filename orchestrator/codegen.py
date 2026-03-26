@@ -444,10 +444,9 @@ def _build_block_prompt(
     변경이 필요한 단일 블록에 대한 LLM 프롬프트 생성.
     입력 토큰 예산: context_window - block_tokens - 500 마진
     """
-    context_window = cfg.get("context_window", 8192)
     block_tokens = min(max(len(block_text) // 4 * 2 + 512, 1024), cfg.get("max_tokens", 8192))
-    # 입력 예산 = 전체 컨텍스트 - 출력 예산 - 안전 마진
-    input_budget = max(context_window - block_tokens - 500, 2000)
+    # 블록 재작성용 입력 예산: 최대 6000토큰 하드캡 (블록 하나에 수십만 토큰 불필요)
+    input_budget = min(cfg.get("block_input_budget", 6000), 6000)
 
     # 섹션별 토큰 배분: algo 50%, graph 20%, uarch 20%, diff 10%
     algo_budget   = int(input_budget * 0.50)
