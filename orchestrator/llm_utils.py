@@ -107,7 +107,7 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
                 "yaml의 max_tokens 값을 높이거나 --output-max-tokens를 늘리세요.",
                 stacklevel=3,
             )
-        return choice["message"]["content"]
+        return choice["message"]["content"] or ""
 
     chunks: list[str] = []
     for line in resp.iter_lines():

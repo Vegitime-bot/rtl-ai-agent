@@ -556,7 +556,7 @@ def generate_rtl_patch_mode(
 
         block_text = block.get("text", "")
         block_signals = list(set(block.get("signals", [])) | set(block.get("lhs", [])))
-        block_tokens = max(len(block_text) // 4 * 2, 2048)
+        block_tokens = max(len(block_text) // 4 * 3, 4096)  # 원본 블록 크기의 3배 또는 최소 4096
 
         print(f"[codegen/patch] 블록 {i+1}/{len(target_blocks)}: "
               f"L{block.get('line_start')}-{block.get('line_end')} "
@@ -575,6 +575,8 @@ def generate_rtl_patch_mode(
                     system_prompt="You rewrite a single Verilog always/assign block. Return the block code only, no module wrapper, no markdown.",
                     max_tokens=min(block_tokens, cfg.get("max_tokens", 8192)),
                 )
+                if not result:
+                    raise ValueError("LLM returned empty/None response")
                 result = result.replace("```verilog", "").replace("```", "").strip()
                 if result:
                     patches.append({"original": block_text, "replacement": result, "chunk": block})
