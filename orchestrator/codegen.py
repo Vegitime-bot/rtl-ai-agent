@@ -415,6 +415,21 @@ def generate_rtl_with_retry(
 # Patch Mode: 변경 블록만 LLM 생성 후 원본에 병합
 # ─────────────────────────────────────────────────────────────
 
+def _block_is_complete(block_text: str) -> bool:
+    """
+    블록이 완전히 닫혔는지 확인.
+    begin/end 카운트 또는 assign 단일 라인 여부로 판단.
+    """
+    stripped = block_text.strip()
+    # assign은 세미콜론으로 끝나면 완전
+    if stripped.startswith("assign"):
+        return stripped.rstrip().endswith(";")
+    # always/if 블록: begin/end 균형 확인
+    begins = stripped.count("begin")
+    ends = len([t for t in stripped.split() if t in ("end", "endcase")])
+    return begins > 0 and ends >= begins
+
+
 def _build_block_prompt(
     block_text: str,
     block_signals: list[str],
@@ -588,14 +603,33 @@ def generate_rtl_patch_mode(
 
         for attempt in range(max_retries + 1):
             try:
+                chunk_max = min(block_tokens, cfg.get("max_tokens", 8192))
                 result = call_llm(
                     prompt, cfg,
                     system_prompt="You rewrite a single Verilog always/assign block. Return the block code only, no module wrapper, no markdown.",
-                    max_tokens=min(block_tokens, cfg.get("max_tokens", 8192)),
+                    max_tokens=chunk_max,
                 )
                 if not result:
                     raise ValueError("LLM returned empty/None response")
                 result = result.replace("```verilog", "").replace("```", "").strip()
+
+                # finish_reason=length 대응: end 키워드 없으면 continuation
+                cont_attempts = 0
+                while cont_attempts < 3 and result and not _block_is_complete(result):
+                    cont_prompt = (
+                        "Continue the following Verilog block exactly where it stopped. "
+                        "Do not repeat prior lines. Return only the missing part until the block closes (end/endmodule excluded).\n"
+                        f"=== Partial Block ===\n{result}\n=== Continue ==="
+                    )
+                    extra = call_llm(
+                        cont_prompt, cfg,
+                        system_prompt="You complete partially-written Verilog blocks. Return code only.",
+                        max_tokens=chunk_max,
+                    )
+                    if extra:
+                        result = result + "\n" + extra.replace("```verilog", "").replace("```", "").strip()
+                    cont_attempts += 1
+
                 if result:
                     patches.append({"original": block_text, "replacement": result, "chunk": block})
                     break
