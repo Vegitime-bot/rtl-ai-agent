@@ -570,7 +570,7 @@ def generate_rtl_patch_mode(
                 )
                 result = result.replace("```verilog", "").replace("```", "").strip()
                 if result:
-                    patches.append({"original": block_text, "replacement": result})
+                    patches.append({"original": block_text, "replacement": result, "chunk": block})
                     break
             except Exception as exc:
                 if attempt < max_retries:
