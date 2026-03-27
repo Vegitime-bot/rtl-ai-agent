@@ -28,20 +28,9 @@ echo "[2/5] 인과관계 그래프 빌드..."
 python scripts/build_graph.py build/rtl_ast.json build/causal_graph.json
 
 # ── [3] RTL 청크 분할 ───────────────────────────
-echo "[3/5] RTL 청크 분할..."
-# chunk_rtl.py는 RTL 디렉토리 또는 단일 파일을 받음
-RTL_INPUT="inputs/rtl"
-if [ -d "$RTL_INPUT" ]; then
-    # 디렉토리면 첫 번째 .v 파일 사용 (대표 파일)
-    FIRST_V=$(ls "$RTL_INPUT"/*.v 2>/dev/null | head -1)
-    if [ -n "$FIRST_V" ]; then
-        python scripts/chunk_rtl.py "$FIRST_V" build/rtl_chunks.json
-    else
-        echo "  [skip] .v 파일 없음"
-    fi
-else
-    python scripts/chunk_rtl.py "$RTL_INPUT" build/rtl_chunks.json
-fi
+echo "[3/5] RTL 청크 분할 (파일별, flow.py 내부에서 처리)..."
+# 파일별 청크 생성은 flow.py 루프 내에서 각 .v 파일마다 수행
+echo "  [skip] flow.py에서 파일별 자동 생성"
 
 # ── [4] Pseudo-diff 생성 ────────────────────────
 echo "[4/5] Pseudo-diff 생성..."

@@ -311,23 +311,49 @@ def main() -> None:
         output_dir = args.output_rtl.parent
         all_verifications = {}
 
+        # chunk_rtl 임포트 (flow.py 내에서 파일별 청크 생성용)
+        scripts_dir = Path(__file__).parent.parent / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        try:
+            from chunk_rtl import chunk_verilog as _chunk_verilog  # type: ignore
+            _chunk_available = True
+        except ImportError:
+            _chunk_available = False
+            _chunk_verilog = None
+            warnings.warn("[flow] chunk_rtl 임포트 실패 — 청크 없이 진행", stacklevel=1)
+
         for rtl_file in rtl_files:
             # 출력 파일: outputs/<원본파일명> (1:1 대응)
             out_path = output_dir / rtl_file.name
             print(f"\n[flow] 처리 중: {rtl_file.name} → {out_path}")
 
+            # 파일별 청크 생성
+            per_file_chunks_path: Path | None = None
+            if _chunk_available:
+                per_file_chunks_path = build_dir / f"rtl_chunks_{rtl_file.stem}.json"
+                try:
+                    chunks = _chunk_verilog(rtl_file.read_text())
+                    per_file_chunks_path.write_text(
+                        json.dumps(chunks, indent=2, ensure_ascii=False)
+                    )
+                    print(f"[flow] 청크 생성: {per_file_chunks_path.name} ({len(chunks)} blocks)")
+                except Exception as exc:
+                    warnings.warn(f"[flow] 청크 생성 실패 ({exc}), 청크 없이 진행", stacklevel=1)
+                    per_file_chunks_path = None
+
             if not args.no_patch_mode:
                 print("[flow] 🩹 patch mode: 변경 블록만 생성 후 원본 병합")
                 _, v = generate_rtl_patch_mode(
                     model_cfg,
-                    rtl_file,          # 단일 파일로 전달
+                    rtl_file,
                     uarch_origin,
                     uarch_new,
                     algo_origin_path,
                     algo_new_path,
                     out_path,
                     causal_graph_path=causal_graph_path,
-                    rtl_chunks_path=rtl_chunks_path,
+                    rtl_chunks_path=per_file_chunks_path,
                     pseudo_diff_path=pseudo_diff_path,
                     graph_ctx_text="\n\n".join(filter(None, [lsp_ctx_text, graph_ctx_text])),
                     max_retries=args.max_retries,
@@ -335,7 +361,7 @@ def main() -> None:
             else:
                 _, v = generate_rtl_with_retry(
                     model_cfg,
-                    rtl_file,          # 단일 파일로 전달
+                    rtl_file,
                     uarch_origin,
                     uarch_new,
                     algo_origin_path,
@@ -343,7 +369,7 @@ def main() -> None:
                     out_path,
                     causal_graph_path=causal_graph_path,
                     max_retries=args.max_retries,
-                    rtl_chunks_path=rtl_chunks_path,
+                    rtl_chunks_path=per_file_chunks_path,
                     pseudo_diff_path=pseudo_diff_path,
                     token_budget=effective_token_budget,
                     graph_ctx_text="\n\n".join(filter(None, [lsp_ctx_text, graph_ctx_text])),
