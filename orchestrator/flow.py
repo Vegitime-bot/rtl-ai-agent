@@ -271,7 +271,7 @@ def main() -> None:
             f"Summarize the following RTL change findings and action plan in 3-5 sentences:\n{summary_input}",
             model_cfg,
             system_prompt="You are an RTL design assistant. Summarize concisely.",
-            max_tokens=model_cfg.get("summary_max_tokens", 1024),
+            max_tokens=model_cfg.get("max_tokens", 2048),
         )
         print(f"[flow] stage3 summary     → done")
 

@@ -49,11 +49,7 @@ def build_plan(
     else:
         call_llm = None
 
-    # 플랜 전용 토큰 — yaml에 plan_max_tokens 없으면 기본값 사용
-    plan_max = (
-        model_cfg.get("plan_max_tokens", _PLAN_MAX_TOKENS_DEFAULT)
-        if model_cfg else _PLAN_MAX_TOKENS_DEFAULT
-    )
+    plan_max = model_cfg.get("max_tokens", 2048) if model_cfg else 2048
 
     def _safe_action(prompt_text: str, fallback: str) -> str:
         """독립 LLM 호출 — 이전 단계 원자료 없이 요약 텍스트만으로 플랜 생성."""

@@ -50,12 +50,7 @@ def analyze(
     else:
         call_llm = None
 
-    # 분석 요약 전용 토큰 — yaml에 analysis_max_tokens 없으면 기본값 사용
-    # RTL 생성용 max_tokens(수만 토큰)를 절대 그대로 쓰지 않음
-    summary_max = (
-        model_cfg.get("analysis_max_tokens", _ANALYSIS_MAX_TOKENS_DEFAULT)
-        if model_cfg else _ANALYSIS_MAX_TOKENS_DEFAULT
-    )
+    summary_max = model_cfg.get("max_tokens", 2048) if model_cfg else 2048
 
     def _summarize(text: str) -> str:
         """청크 1개를 독립 LLM 호출로 요약. 다른 청크/단계 정보 없음."""

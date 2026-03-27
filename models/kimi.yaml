@@ -3,15 +3,7 @@ provider: openai          # OpenAI 호환 API
 endpoint: https://api.moonshot.cn/v1  # ← 실제 엔드포인트로 교체
 model: moonshot-v1-256k   # ← 실제 모델명으로 교체
 
-# ── 출력 토큰 상한 (단계별 독립 설정) ─────────────────────
-# RTL 생성 전용 — 길고 완전한 Verilog 출력이 필요
-max_tokens: 16384
-# 분석 요약 (spec_agent): 2~3문장으로 충분
-analysis_max_tokens: 512
-# 플랜 생성 (plan_agent): 1~2문장
-plan_max_tokens: 256
-# 전체 요약 (flow.py summary): 중간 수준
-summary_max_tokens: 1024
+max_tokens: 16384   # spec/plan/summary 공용 + codegen용 (codegen은 별도 output_max_tokens로 override 가능)
 
 context_window: 256000
 temperature: 0.2
