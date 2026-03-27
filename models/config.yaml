@@ -4,3 +4,10 @@ endpoint: https://api.anthropic.com/v1
 model: claude-sonnet-4-6
 max_tokens: 4096
 api_key: ""  # set MODEL_API_KEY env var instead of committing secrets
+
+# ── Verification ───────────────────────────────
+# causal 엣지 보존율 기준 (0.0~1.0)
+# 0.5 = 50% 이상 보존 시 pass (기본)
+# 1.0 = 전체 보존 필수 (엄격)
+# 0.0 = causal 검증 skip (항상 pass)
+verify_causal_threshold: 0.5

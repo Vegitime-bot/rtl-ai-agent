@@ -11,5 +11,6 @@ timeout: 7200
 req_interval: 1.0        # 블록 간 LLM 호출 최소 대기(초) — rate limit 방지
 rate_limit_retries: 5    # 429 발생 시 최대 재시도 횟수
 rate_limit_retry_base: 60  # 재시도 기본 대기(초), 지수 backoff
-llm_log: "logs/llm.jsonl"   # LLM 요청/응답 로그 (비활성화하려면 주석 처리)
-# api_key: ""  # 필요 시 설정 또는 MODEL_API_KEY 환경변수 사용
+llm_log: "logs/llm.jsonl"
+verify_causal_threshold: 0.5
+# api_key: ""

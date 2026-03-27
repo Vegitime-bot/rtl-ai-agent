@@ -388,7 +388,7 @@ def generate_rtl_with_retry(
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(current_rtl)
 
-        verification = run_checks(output, causal_graph_path=causal_graph_path)
+        verification = run_checks(output, causal_graph_path=causal_graph_path, causal_threshold=cfg.get("verify_causal_threshold", 0.5))
         status = verification["status"]
 
         print(f"[codegen] attempt {attempt + 1}/{max_retries + 1} → {status}")
@@ -653,7 +653,7 @@ def generate_rtl_patch_mode(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(patched_rtl)
 
-    verification = run_checks(output, causal_graph_path=causal_graph_path)
+    verification = run_checks(output, causal_graph_path=causal_graph_path, causal_threshold=cfg.get("verify_causal_threshold", 0.5))
     print(f"[codegen/patch] 검증 결과: {verification['status']}")
 
     return patched_rtl, verification

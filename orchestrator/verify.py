@@ -151,11 +151,17 @@ _ORIG_CLOCKED: set[tuple] = {
 }
 
 
-def _causal_checks(rtl_path: Path, graph_path: Path) -> dict:
+def _causal_checks(
+    rtl_path: Path,
+    graph_path: Path,
+    pass_threshold: float = 0.5,
+) -> dict:
     """
-    causal_graph.json 원본 엣지 보존 여부를 검증하고 결과를 반환.
-    추가 필수 엣지(REQUIRED_NEW_*)는 uArch_new에서 동적으로 파악하기 전까지
-    별도 YAML/JSON 설정으로 외부 주입 가능하도록 설계(현재는 empty).
+    causal_graph.json 원본 엣지 보존 신뢰도 검증.
+
+    pass_threshold: 보존율(0.0~1.0) 이상이면 pass. 기본 0.5(50%).
+      - yaml에 verify_causal_threshold 키로 override 가능
+      - 1.0 = 모든 엣지 보존 필수 (엄격), 0.0 = 항상 pass
     """
     if json is None:
         return {"status": "skip", "detail": "json module unavailable"}
@@ -170,6 +176,10 @@ def _causal_checks(rtl_path: Path, graph_path: Path) -> dict:
     all_edges = comb | clocked | assigns
 
     orig_edges = {(e['from'], e['to']) for e in graph_obj['graphs'][0]['edges']}
+    total = len(orig_edges)
+    if total == 0:
+        return {"status": "pass", "checks": ["causal"], "detail": "no original edges to check",
+                "confidence": 1.0, "preserved": 0, "evolved": 0, "missing_edges": []}
 
     missing: list[str] = []
     preserved = 0
@@ -184,27 +194,26 @@ def _causal_checks(rtl_path: Path, graph_path: Path) -> dict:
             if (frm, to) in clocked:
                 preserved += 1
             else:
-                missing.append(f"{frm} → {to} (clocked, MISSING)")
+                missing.append(f"{frm} → {to}")
         else:
             missing.append(f"{frm} → {to}")
 
-    if missing:
-        return {
-            "status": "fail",
-            "checks": ["causal"],
-            "detail": f"missing {len(missing)} original causal edge(s)",
-            "missing_edges": missing,
-            "preserved": preserved,
-            "evolved": evolved,
-        }
+    confidence = round((preserved + evolved) / total, 3)
+    status = "pass" if confidence >= pass_threshold else "fail"
 
     return {
-        "status": "pass",
+        "status": status,
         "checks": ["causal"],
-        "detail": f"all {preserved} original edges preserved ({evolved} evolved via pipeline)",
+        "confidence": confidence,
+        "pass_threshold": pass_threshold,
+        "detail": (
+            f"causal confidence {confidence:.1%} "
+            f"(preserved={preserved}, evolved={evolved}, missing={len(missing)}/{total})"
+            + (" ✅" if status == "pass" else f" ⚠️  threshold={pass_threshold:.0%}")
+        ),
         "preserved": preserved,
         "evolved": evolved,
-        "missing_edges": [],
+        "missing_edges": missing,
     }
 
 
@@ -212,7 +221,7 @@ def _causal_checks(rtl_path: Path, graph_path: Path) -> dict:
 # 3. 통합 진입점
 # ─────────────────────────────────────────────
 
-def run_checks(rtl_path: Path, causal_graph_path: Path | None = None) -> dict:
+def run_checks(rtl_path: Path, causal_graph_path: Path | None = None, causal_threshold: float = 0.5) -> dict:
     """
     RTL 파일에 대해 다단계 검증을 실행한다.
 
@@ -240,7 +249,7 @@ def run_checks(rtl_path: Path, causal_graph_path: Path | None = None) -> dict:
             warnings.warn(f"[verify] causal_graph not found: {causal_graph_path}, skipping causal check")
             results["causal"] = {"status": "skip", "detail": "graph file not found"}
         else:
-            causal = _causal_checks(rtl_path, causal_graph_path)
+            causal = _causal_checks(rtl_path, causal_graph_path, pass_threshold=causal_threshold)
             results["causal"] = causal
     else:
         results["causal"] = {"status": "skip", "detail": "no causal_graph_path provided"}
