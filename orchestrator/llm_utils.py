@@ -109,15 +109,12 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
         choice = data["choices"][0]
         finish_reason = choice.get("finish_reason", "unknown")
         usage = data.get("usage", {})
-        prompt_chars = len(prompt)
-        prompt_tokens_est = prompt_chars // 4
         print(
             f"[llm] finish_reason={finish_reason} | "
-            f"prompt_tokens={usage.get('prompt_tokens','?')} (est={prompt_tokens_est}) "
+            f"prompt_tokens={usage.get('prompt_tokens','?')} "
             f"completion_tokens={usage.get('completion_tokens','?')} "
             f"total={usage.get('total_tokens','?')} | "
-            f"max_tokens_requested={max_tokens} | "
-            f"prompt_chars={prompt_chars}"
+            f"max_tokens_requested={max_tokens}"
         )
         content = choice["message"]["content"] or ""
         if finish_reason == "length":
@@ -140,13 +137,10 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
             "provider": "openai",
             "model": cfg.get("model"),
             "prompt_tokens": usage.get("prompt_tokens"),
-            "prompt_tokens_est": prompt_tokens_est,
-            "prompt_chars": prompt_chars,
             "completion_tokens": usage.get("completion_tokens"),
             "finish_reason": finish_reason,
             "max_tokens_requested": max_tokens,
-            "prompt_head": prompt[:300],   # 앞부분 (어떤 단계인지 식별용)
-            "prompt_tail": prompt[-200:],  # 뒷부분 (잘린 지점 확인용)
+            "prompt": prompt[:500],   # 앞 500자만 기록 (로그 크기 제한)
             "response": content[:500],
         })
         return content
@@ -242,69 +236,36 @@ def _call_claude(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
 
 def _hard_trim_prompt(prompt: str, max_input_tokens: int) -> str:
     """
-    프롬프트가 max_input_tokens를 초과하면 컨텍스트 섹션을 잘라 맞춤.
-
-    보존 우선순위 (높음 → 낮음):
-      1. 헤더 지시문 (프롬프트 첫 200자)
-      2. === Original Block === 또는 === Original RTL === (핵심 코드)
-      3. === Requirements === (생성 요구사항)
-      4. === Algorithm (new) === (신규 스펙)
-
-    잘라내는 대상 (낮은 우선순위):
-      - ## Signal Causal Context (graph)
-      - ## RTL Module Context (LSP)
-      - === Micro-architecture ===
-      - === Algorithm (origin) ===  (신규 스펙만 있으면 충분)
+    프롬프트가 max_input_tokens를 초과하면 뒷부분을 잘라 반드시 맞춤.
+    Requirements 섹션은 보존하기 위해 앞부분(RTL/algo)을 우선 자름.
     """
-    import warnings
-
     char_limit = max_input_tokens * 4  # 4자 ≈ 1토큰
     if len(prompt) <= char_limit:
         return prompt
 
-    original_len = len(prompt)
-
-    # ── Step 1: graph / LSP 컨텍스트 섹션 제거 (가장 먼저 자름) ──────────
-    import re as _re
-    for pattern in [
-        r"## Signal Causal Context.*?(?=\n===|\n##|\Z)",
-        r"## RTL Module Context \(from LSP\).*?(?=\n===|\n##|\Z)",
-        r"=== Micro-architecture \(origin\) ===.*?(?=\n===|\Z)",
-        r"=== Algorithm \(origin\) ===.*?(?=\n===|\Z)",
-    ]:
-        if len(prompt) <= char_limit:
-            break
-        prompt = _re.sub(pattern, "", prompt, flags=_re.DOTALL).strip()
-
-    if len(prompt) <= char_limit:
-        removed = (original_len - len(prompt)) // 4
-        warnings.warn(
-            f"[llm] ⚠️  prompt trimmed by removing low-priority sections: ~{removed} tokens removed",
-            stacklevel=4,
-        )
-        return prompt
-
-    # ── Step 2: === Requirements === 뒤 tail 보존 후 body 앞부분 자름 ────
+    # Requirements 섹션 보존: 마지막 === Requirements === 이후를 분리
     req_marker = "=== Requirements ==="
     req_idx = prompt.rfind(req_marker)
     if req_idx != -1:
         body = prompt[:req_idx]
         tail = prompt[req_idx:]
-        body_limit = char_limit - len(tail) - 100
+        tail_chars = len(tail)
+        body_limit = char_limit - tail_chars - 100  # 여유 100자
         if body_limit > 0:
-            trimmed_body = body[:body_limit] + "\n... [context trimmed]\n"
+            trimmed_body = body[:body_limit] + "\n... [prompt trimmed to fit context window]\n"
             result = trimmed_body + tail
-            removed = (original_len - len(result)) // 4
+            trimmed_tokens = (len(prompt) - len(result)) // 4
+            import warnings
             warnings.warn(
-                f"[llm] ⚠️  prompt hard-trimmed (body): ~{removed} tokens removed",
+                f"[llm] ⚠️  prompt hard-trimmed: {trimmed_tokens} tokens removed to fit context window",
                 stacklevel=4,
             )
             return result
 
-    # ── Step 3: fallback — 앞부분 유지 ───────────────────────────────────
-    removed = (len(prompt) - char_limit) // 4
+    # fallback: 단순 앞부분 유지
+    import warnings
     warnings.warn(
-        f"[llm] ⚠️  prompt hard-trimmed (simple fallback): ~{removed} tokens removed",
+        f"[llm] ⚠️  prompt hard-trimmed (simple): {(len(prompt) - char_limit) // 4} tokens removed",
         stacklevel=4,
     )
     return prompt[:char_limit]
