@@ -19,7 +19,8 @@ def analyze(ma_chunks: List[dict], pseudo_diff: str, model_cfg: dict | None = No
     else:
         call_llm = None
 
-    SUMMARY_MAX_TOKENS = model_cfg.get("max_tokens", 2048) if model_cfg else 2048
+    # 분석 요약은 2~3문장 → 512토큰으로 충분. yaml max_tokens(RTL 생성용)를 그대로 쓰지 않음
+    SUMMARY_MAX_TOKENS = model_cfg.get("analysis_max_tokens", 512) if model_cfg else 512
     # 입력 청크를 LLM에 넣기 전 최대 글자수 제한 (4자 ≈ 1토큰, 3000토큰 분량)
     INPUT_CHAR_LIMIT = 12000
 

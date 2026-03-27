@@ -255,7 +255,7 @@ def main() -> None:
             "findings": [f.__dict__ for f in findings],
             "plan": [p.__dict__ for p in plan],
         }, indent=2)
-        llm_summary = call_llm(prompt, model_cfg, max_tokens=1024)
+        llm_summary = call_llm(prompt, model_cfg, max_tokens=model_cfg.get("summary_max_tokens", 1024))
 
     verification = None
     if args.generate_rtl:

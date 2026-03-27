@@ -22,7 +22,8 @@ def build_plan(rtl_modules: List[dict], spec_findings: List[str], graph_notes: L
     else:
         call_llm = None
 
-    PLAN_MAX_TOKENS = model_cfg.get("max_tokens", 2048) if model_cfg else 2048
+    # 플랜은 1~2문장 → 256토큰으로 충분. yaml max_tokens(RTL 생성용)를 그대로 쓰지 않음
+    PLAN_MAX_TOKENS = model_cfg.get("plan_max_tokens", 256) if model_cfg else 256
 
     def _safe_action(prompt_text: str, fallback: str) -> str:
         if call_llm is None:

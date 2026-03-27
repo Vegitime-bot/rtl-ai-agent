@@ -2,7 +2,13 @@
 provider: openai
 endpoint: http://사내망주소/v1   # ← 실제 주소로 교체
 model: GLM4.7
-max_tokens: 65536
+
+# ── 출력 토큰 상한 (단계별 독립 설정) ─────────────────────
+max_tokens: 65536        # RTL 생성 전용
+analysis_max_tokens: 512
+plan_max_tokens: 256
+summary_max_tokens: 1024
+
 context_window: 202752
 temperature: 0.2
 timeout: 7200
