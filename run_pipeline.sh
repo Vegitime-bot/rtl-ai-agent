@@ -21,11 +21,11 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # ── [1] RTL 파싱 ────────────────────────────────
 echo "[1/5] RTL 파싱..."
-python3 scripts/parse_rtl.py inputs/rtl build/rtl_ast.json
+python3.11 scripts/parse_rtl.py inputs/rtl build/rtl_ast.json
 
 # ── [2] 인과관계 그래프 빌드 ────────────────────
 echo "[2/5] 인과관계 그래프 빌드..."
-python3 scripts/build_graph.py build/rtl_ast.json build/causal_graph.json
+python3.11 scripts/build_graph.py build/rtl_ast.json build/causal_graph.json
 
 # ── [3] RTL 청크 분할 ───────────────────────────
 echo "[3/5] RTL 청크 분할 (파일별, flow.py 내부에서 처리)..."
@@ -34,7 +34,7 @@ echo "  [skip] flow.py에서 파일별 자동 생성"
 
 # ── [4] Pseudo-diff 생성 ────────────────────────
 echo "[4/5] Pseudo-diff 생성..."
-python3 scripts/diff_pseudo.py \
+python3.11 scripts/diff_pseudo.py \
     inputs/algorithm/origin \
     inputs/algorithm/new \
     build/pseudo_diff.json
@@ -51,15 +51,15 @@ for f in inputs/uArch_origin.txt inputs/uArch_new.txt; do
     [ -f "$f" ] && INGEST_FILES="$INGEST_FILES $f"
 done
 if [ -n "$INGEST_FILES" ]; then
-    python3 rag/ingest_faiss.py --index-dir build/faiss_index $INGEST_FILES
+    python3.11 rag/ingest_faiss.py --index-dir build/faiss_index $INGEST_FILES
 else
     echo "  [skip] ingest 파일 없음"
 fi
 
 # ── [optional] Neo4j 인제스트 ───────────────────
-if python3 -c "from neo4j import GraphDatabase" 2>/dev/null; then
+if python3.11 -c "from neo4j import GraphDatabase" 2>/dev/null; then
     echo "[optional] Neo4j 인제스트..."
-    python3 scripts/neo4j_ingest.py --graph-json build/causal_graph.json --config config/neo4j.yaml --clear || echo "  [skip] Neo4j 연결 실패"
+    python3.11 scripts/neo4j_ingest.py --graph-json build/causal_graph.json --config config/neo4j.yaml --clear || echo "  [skip] Neo4j 연결 실패"
 fi
 
 # ── RTL 생성 ────────────────────────────────────
@@ -76,7 +76,7 @@ for arg in "$@"; do
     prev="$arg"
 done
 
-python3 orchestrator/flow.py \
+python3.11 orchestrator/flow.py \
     --generate-rtl \
     --model-config "$MODEL_CONFIG" \
     --embed-model models/bge-m3 \

@@ -137,11 +137,33 @@ def main() -> None:
     texts = [c["text"] for c in all_chunks]
     print(f"[ingest_faiss] total chunks: {len(texts)}")
 
-    # 임베딩
+    # 임베딩 — faiss + torch 동시 로드 시 macOS ARM segfault 우회: subprocess 분리
     print(f"[ingest_faiss] embedding with {args.model_dir} ...")
-    from embed import embed  # type: ignore
-    vecs = embed(texts, model_name_or_path=args.model_dir,
-                 batch_size=args.batch_size, max_length=args.max_length)
+    import subprocess, tempfile, os
+    rag_dir = Path(__file__).parent
+    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as f:
+        out_path = f.name
+    script = f"""
+import sys, json, numpy as np
+sys.path.insert(0, {str(rag_dir)!r})
+from embed import embed
+texts = json.loads(sys.stdin.read())
+vecs = embed(texts, model_name_or_path={repr(args.model_dir)},
+             batch_size={args.batch_size}, max_length={args.max_length})
+np.save({out_path!r}, vecs)
+"""
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        input=json.dumps(texts),
+        capture_output=False,
+        text=True,
+        timeout=600,
+    )
+    if proc.returncode != 0:
+        print(f"[ingest_faiss] ERROR: embed subprocess failed")
+        sys.exit(1)
+    vecs = np.load(out_path)
+    os.unlink(out_path)
     print(f"[ingest_faiss] vectors: {vecs.shape}")
 
     # FAISS 인덱스 저장
