@@ -182,7 +182,13 @@ def build_prompt_chunked(
             selection, uarch_origin, uarch_new, algo_origin, algo_new
         )
         if graph_ctx_text:
-            prompt = f"## Signal Causal Context (from Neo4j)\n{graph_ctx_text}\n\n{prompt}"
+            # token_budget의 10%를 graph context에 할당 (build_prompt()와 동일 비율)
+            graph_budget = int(token_budget * 0.10)
+            prompt = (
+                f"## Signal Causal Context (from Neo4j)\n"
+                f"{_truncate_to_tokens(graph_ctx_text, graph_budget)}\n\n"
+                f"{prompt}"
+            )
         return prompt, True
 
     except Exception as exc:

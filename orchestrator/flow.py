@@ -245,6 +245,19 @@ def main() -> None:
         if candidate_signals else ""
     )
 
+    # graph + lsp 합산 크기를 context_window의 10%로 cap
+    # (codegen 내부에서도 truncate하지만, 여기서 미리 제한해 context 계산 오류 방지)
+    if model_cfg:
+        ctx_window = model_cfg.get("context_window", 32000)
+        graph_token_cap = int(ctx_window * 0.10)
+        graph_char_cap  = graph_token_cap * 4
+        if graph_ctx_text and len(graph_ctx_text) > graph_char_cap:
+            graph_ctx_text = graph_ctx_text[:graph_char_cap] + "\n... [graph context truncated]"
+            print(f"[flow] graph_ctx truncated to ~{graph_token_cap} tokens")
+        if lsp_ctx_text and len(lsp_ctx_text) > graph_char_cap:
+            lsp_ctx_text = lsp_ctx_text[:graph_char_cap] + "\n... [lsp context truncated]"
+            print(f"[flow] lsp_ctx truncated to ~{graph_token_cap} tokens")
+
     # ── STAGE 3: plan_agent (독립) ─────────────────────────────────────────
     # 입력: findings.json (요약 텍스트만) + rtl_ast (모듈/포트 메타)
     # RTL 원문, algo 파일, graph raw data 등 포함하지 않음
