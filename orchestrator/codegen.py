@@ -584,12 +584,13 @@ def generate_rtl_patch_mode(
 
         block_text = block.get("text", "")
         block_signals = list(set(block.get("signals", [])) | set(block.get("lhs", [])))
-        # 출력 토큰: 원본 블록의 2배 + 여유 512, 최소 1024, 최대 cfg max_tokens
-        # 블록 출력 토큰: 원본 크기의 3배 + 여유 512, 최소 2048
-        # 입력이 6000토큰으로 제한됐으므로 GLM이 출력 여유 충분
+        # 출력 토큰: 원본 블록의 3배 + 여유 512, 최소 cfg max_tokens(yaml 설정값 전체 활용)
+        # - 2048 하드캡 제거: 재작성 블록이 원본보다 크면 finish_reason=length 발생하기 때문
+        # - cfg["max_tokens"] 전체를 기본값으로 사용하되, 블록이 매우 크면 2배까지 허용
+        cfg_max = cfg.get("max_tokens", 8192)
         block_tokens = min(
-            max(len(block_text) // 4 * 3 + 512, 2048),
-            cfg.get("max_tokens", 8192),
+            max(len(block_text) // 4 * 3 + 512, cfg_max),
+            cfg_max * 2,
         )
 
         print(f"[codegen/patch] 블록 {i+1}/{len(target_blocks)}: "

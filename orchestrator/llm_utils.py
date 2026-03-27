@@ -116,6 +116,7 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
             f"total={usage.get('total_tokens','?')} | "
             f"max_tokens_requested={max_tokens}"
         )
+        content = choice["message"]["content"] or ""
         if finish_reason == "length":
             import warnings
             warnings.warn(
@@ -123,7 +124,14 @@ def _call_openai(prompt: str, cfg: dict, system_prompt: str, max_tokens: int) ->
                 "yaml의 max_tokens 값을 높이거나 --output-max-tokens를 늘리세요.",
                 stacklevel=3,
             )
-        content = choice["message"]["content"] or ""
+            # content가 비어 있으면 (Kimi 등 일부 모델이 null 반환) 빈 문자열 대신
+            # ValueError를 raise해서 호출 측 retry 루프가 명확히 캐치하도록 함
+            if not content:
+                raise RuntimeError(
+                    f"[llm] finish_reason=length + empty content: "
+                    f"max_tokens={max_tokens} 초과로 응답 전체가 잘림. "
+                    "kimi.yaml의 max_tokens를 높이세요."
+                )
         _log_llm(cfg, {
             "ts": datetime.utcnow().isoformat(),
             "provider": "openai",
