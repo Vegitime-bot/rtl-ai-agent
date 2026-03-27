@@ -11,3 +11,6 @@ api_key: ""  # set MODEL_API_KEY env var instead of committing secrets
 # 1.0 = 전체 보존 필수 (엄격)
 # 0.0 = causal 검증 skip (항상 pass)
 verify_causal_threshold: 0.5
+
+# ── Logging ────────────────────────────────────
+llm_log: "logs/llm.jsonl"
