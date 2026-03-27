@@ -76,8 +76,14 @@ def _collect_signals(verilog: str) -> dict[str, str]:
     return kinds
 
 
+_VL_LITERAL_RE = re.compile(
+    r"\d+'[bBoOdDhH][0-9a-fA-FxXzZ_]+"  # 1'b0, 8'hFF 등
+    r"|\b\d+\b"                           # 순수 정수
+)
+
 def _extract_identifiers(expr: str, exclude: set[str]) -> set[str]:
-    toks = re.findall(r'\b([A-Za-z_]\w*)\b', expr)
+    cleaned = _VL_LITERAL_RE.sub(' ', expr)
+    toks = re.findall(r'\b([A-Za-z_]\w*)\b', cleaned)
     return {t for t in toks if t not in VL_KEYWORDS and t not in exclude}
 
 
@@ -175,7 +181,14 @@ def _causal_checks(
     comb, clocked, assigns = _build_edge_sets(verilog)
     all_edges = comb | clocked | assigns
 
-    orig_edges = {(e['from'], e['to']) for e in graph_obj['graphs'][0]['edges']}
+    # node_kinds에 등록된 노드만 유효한 신호 — b0/b1 같은 리터럴 파싱 오류 제외
+    node_kinds = graph_obj['graphs'][0].get('node_kinds', {})
+    raw_edges = {(e['from'], e['to']) for e in graph_obj['graphs'][0]['edges']}
+    # 양쪽 노드 모두 node_kinds에 있거나, 최소 to(LHS)가 있는 엣지만 검증
+    orig_edges = {
+        (f, t) for f, t in raw_edges
+        if t in node_kinds  # LHS가 실제 신호여야 함
+    }
     total = len(orig_edges)
     if total == 0:
         return {"status": "pass", "checks": ["causal"], "detail": "no original edges to check",

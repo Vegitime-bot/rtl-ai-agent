@@ -100,8 +100,16 @@ def _find_modules(text: str):
         yield name, param_text, port_text, body_text
 
 
+_VERILOG_LITERAL_RE = re.compile(
+    r"\d+'[bBoOdDhH][0-9a-fA-FxXzZ_]+"  # ex: 8'b0, 16'hFF, 1'b1
+    r"|\b\d+\b"                           # 순수 정수
+)
+
 def extract_tokens(expr: str) -> list[str]:
-    return [t for t in IDENT_RE.findall(expr) if t not in RESERVED]
+    """RHS 표현식에서 유효한 신호명만 추출. 숫자 리터럴(1'b0 등)은 제외."""
+    # 리터럴 먼저 제거 후 식별자 추출
+    cleaned = _VERILOG_LITERAL_RE.sub(' ', expr)
+    return [t for t in IDENT_RE.findall(cleaned) if t not in RESERVED]
 
 
 def _strip_comments(text: str) -> str:
