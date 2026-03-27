@@ -65,7 +65,7 @@ fi
 # ── [optional] Neo4j 인제스트 ───────────────────
 if python -c "from neo4j import GraphDatabase" 2>/dev/null; then
     echo "[optional] Neo4j 인제스트..."
-    python scripts/neo4j_ingest.py --graph-json build/causal_graph.json --clear || echo "  [skip] Neo4j 연결 실패"
+    python scripts/neo4j_ingest.py --graph-json build/causal_graph.json --config config/neo4j.yaml --clear || echo "  [skip] Neo4j 연결 실패"
 fi
 
 # ── RTL 생성 ────────────────────────────────────
