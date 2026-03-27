@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -86,13 +87,23 @@ def _load_chunks_from_py(path: Path) -> list[dict]:
 
 def load_chunks(path: Path) -> list[dict]:
     suffix = path.suffix.lower()
+    name = path.name.lower()
     if suffix == ".json":
         return _load_chunks_from_json(path)
-    elif suffix in (".py", ".v", ".sv"):
-        if suffix == ".py":
-            return _load_chunks_from_py(path)
-        else:
-            return [{"kind": "rtl_raw", "source": str(path), "ref": path.stem, "text": path.read_text()}]
+    elif suffix == ".py":
+        return _load_chunks_from_py(path)
+    elif suffix in (".v", ".sv"):
+        return [{"kind": "rtl_raw", "source": str(path), "ref": path.stem, "text": path.read_text()}]
+    elif suffix == ".txt" and ("uarch" in name or "uarch" in name.replace("_", "")):
+        # uArch 문서 → 섹션 단위 분할 (빈 줄 2개 기준)
+        text = path.read_text()
+        sections = re.split(r'\n{2,}', text.strip())
+        chunks = []
+        for i, sec in enumerate(sections):
+            sec = sec.strip()
+            if sec:
+                chunks.extend(_split_by_chars(sec, str(path), f"{path.stem}_sec{i}", "uarch"))
+        return chunks if chunks else [{"kind": "uarch", "source": str(path), "ref": path.stem, "text": text}]
     else:
         return [{"kind": "raw", "source": str(path), "ref": path.stem, "text": path.read_text()}]
 

@@ -42,13 +42,18 @@ python3 scripts/diff_pseudo.py \
 # ── [5] FAISS 인덱스 빌드 ───────────────────────
 echo "[5/5] FAISS 인덱스 빌드..."
 INGEST_FILES=""
+# algorithm (py)
 for f in inputs/algorithm/origin/*.py inputs/algorithm/new/*.py; do
+    [ -f "$f" ] && INGEST_FILES="$INGEST_FILES $f"
+done
+# uArch (txt)
+for f in inputs/uArch_origin.txt inputs/uArch_new.txt; do
     [ -f "$f" ] && INGEST_FILES="$INGEST_FILES $f"
 done
 if [ -n "$INGEST_FILES" ]; then
     python3 rag/ingest_faiss.py --index-dir build/faiss_index $INGEST_FILES
 else
-    echo "  [skip] algorithm 파일 없음"
+    echo "  [skip] ingest 파일 없음"
 fi
 
 # ── [optional] Neo4j 인제스트 ───────────────────
