@@ -19,10 +19,49 @@ FAISS 인덱스에서 시맨틱 검색.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
+
+
+def _embed_subprocess(texts: list[str], model_name_or_path: str | None, rag_dir: Path) -> np.ndarray:
+    """
+    embed()를 별도 subprocess에서 실행 — faiss + torch 동시 로드 시 segfault 우회.
+    texts를 JSON으로 stdin에 넘기고 결과 벤터를 npy 파일로 받는다.
+    """
+    import os
+    with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as f:
+        out_path = f.name
+
+    script = f"""
+import sys, json, numpy as np
+sys.path.insert(0, {str(rag_dir)!r})
+from embed import embed
+texts = json.loads(sys.stdin.read())
+model = {repr(model_name_or_path)}
+vecs = embed(texts, model_name_or_path=model)
+np.save({out_path!r}, vecs)
+"""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            input=json.dumps(texts),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"embed subprocess failed: {proc.stderr[-500:]}")
+        vecs = np.load(out_path)
+        return vecs
+    finally:
+        try:
+            os.unlink(out_path)
+        except Exception:
+            pass
 
 _index_cache: dict[str, tuple] = {}   # index_dir → (faiss_index, chunks)
 
@@ -78,11 +117,10 @@ def search(
     if str(rag_dir) not in sys.path:
         sys.path.insert(0, str(rag_dir))
 
-    from embed import embed  # type: ignore
-
     index, chunks = load_index(index_dir)
 
-    query_vec = embed([query], model_name_or_path=model_name_or_path)  # (1, dim)
+    # embed를 subprocess로 실행 — faiss + torch 동시 로드 시 segfault 우회
+    query_vec = _embed_subprocess([query], model_name_or_path, rag_dir)
 
     # kind 필터 적용 시 해당 인덱스만 검색
     if kind_filter:
