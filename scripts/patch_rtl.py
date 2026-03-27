@@ -34,96 +34,65 @@ def apply_patch(rtl_text: str, patches: list[dict]) -> str:
     """
     patches = [{"original": str, "replacement": str, "chunk": dict(optional)}, ...]
 
-    치환 우선순위:
-    1. chunk의 line_start/line_end 기반 위치 치환 (가장 안정적)
-    2. 문자열 완전일치 치환 (fallback)
-    3. 공백 정규화 후 일치 치환 (fallback)
-    4. 모두 실패 시 경고 후 원본 유지
-
-    line 기반 패치는 뒤에서부터 적용해 앞 패치가 line 번호를 밀지 않도록 함.
+    치환 방식:
+    - chunk의 line_start/line_end 기반으로 lines 배열에서 직접 슬라이스 치환
+    - lines 배열을 수정하므로 라인 번호 기준은 항상 원본 기준으로 계산 후
+      오프셋을 누적해 보정 → 앞 패치가 뒤 패치의 라인 번호를 밀지 않음
+    - chunk 없는 패치: 문자열 완전일치 fallback
     """
-    import re
-
-    # chunk 정보 있는 패치를 line 기반으로 처리 (역순으로 적용)
+    # chunk 있는 패치를 line_start 오름차순 정렬 후 라인 오프셋 누적 보정
     line_patches = [(i, p) for i, p in enumerate(patches) if p.get("chunk")]
     str_patches  = [(i, p) for i, p in enumerate(patches) if not p.get("chunk")]
     applied_indices: set[int] = set()
 
     lines = rtl_text.splitlines(keepends=True)
+    line_offset = 0  # 앞 패치로 인해 밀린 라인 수 누적
 
-    # line 기반 치환 (역순: 뒤 라인부터 처리해야 앞 라인 번호가 안 밀림)
-    for idx, patch in sorted(line_patches, key=lambda x: -(x[1]["chunk"].get("line_start", 0))):
+    for idx, patch in sorted(line_patches, key=lambda x: x[1]["chunk"].get("line_start", 0)):
         chunk = patch["chunk"]
-        pos = find_block(rtl_text, chunk)
-        print(f"[patch_rtl] line기반 치환 시도: L{chunk.get('line_start')}-{chunk.get('line_end')} → pos={pos}")
-        if pos is None:
-            print(f"[patch_rtl] ❌ find_block 실패 (라인 범위 초과?)")
+        # 원본 라인 번호에 누적 오프셋 적용
+        raw_start = chunk.get("line_start", 1) - 1  # 0-indexed
+        raw_end   = chunk.get("line_end", raw_start + 1)
+        adj_start = raw_start + line_offset
+        adj_end   = raw_end   + line_offset
+
+        if adj_start < 0 or adj_start >= len(lines):
+            print(f"[patch_rtl] ❌ find_block 실패: L{raw_start+1}-{raw_end} (adj {adj_start}-{adj_end}, total {len(lines)} lines)")
             continue
-        start, end = pos
+
+        adj_end = min(adj_end, len(lines))
         replacement = patch.get("replacement", "")
-        if not replacement.endswith("\n"):
+        if replacement and not replacement.endswith("\n"):
             replacement += "\n"
-        print(f"[patch_rtl] ✅ line기반 치환 성공: chars {start}-{end} → {len(replacement)}chars")
-        rtl_text = rtl_text[:start] + replacement + rtl_text[end:]
+        replacement_lines = replacement.splitlines(keepends=True)
+
+        orig_count = adj_end - adj_start
+        new_count  = len(replacement_lines)
+        lines[adj_start:adj_end] = replacement_lines
+        line_offset += new_count - orig_count
+
+        print(f"[patch_rtl] ✅ line기반 치환: L{raw_start+1}-{raw_end} "
+              f"({orig_count}lines → {new_count}lines, offset={line_offset})")
         applied_indices.add(idx)
 
-    # 문자열 기반 치환 (chunk 없는 패치 + line 치환 실패한 것)
-    remaining = [(i, p) for i, p in enumerate(patches) if i not in applied_indices]
+    rtl_text = "".join(lines)
     applied = len(applied_indices)
 
-    for idx, patch in remaining:
+    # chunk 없는 패치: 문자열 완전일치 fallback
+    for idx, patch in str_patches:
         original = patch.get("original", "")
         replacement = patch.get("replacement", "")
         if not original:
             continue
-
-        # 1차: 완전일치
         if original in rtl_text:
             rtl_text = rtl_text.replace(original, replacement, 1)
             applied += 1
-            continue
-
-        # 2차: 공백 정규화 후 일치
-        def _norm(s: str) -> str:
-            return re.sub(r"[ \t]+", " ", s.strip())
-
-        norm_orig = _norm(original)
-        norm_text = _norm(rtl_text)
-        if norm_orig in norm_text:
-            # 정규화된 위치를 원본에서 찾아 치환
-            start = norm_text.index(norm_orig)
-            end = start + len(norm_orig)
-            # 원본 텍스트에서 대응 위치 복원 (근사)
-            ratio = len(rtl_text) / max(len(norm_text), 1)
-            raw_start = int(start * ratio)
-            raw_end = int(end * ratio)
-            # 앞뒤로 검색 범위 확장해 실제 블록 경계 찾기
-            search_start = max(0, raw_start - 200)
-            search_end = min(len(rtl_text), raw_end + 200)
-            snippet = rtl_text[search_start:search_end]
-            norm_snippet = _norm(snippet)
-            if norm_orig in norm_snippet:
-                s_idx = norm_snippet.index(norm_orig)
-                # snippet에서 s_idx 위치의 원본 offset 복원
-                cum = 0
-                raw_idx = 0
-                for ci, ch in enumerate(snippet):
-                    if _norm(snippet[ci:ci+1]) and cum >= s_idx:
-                        raw_idx = ci
-                        break
-                    if _norm(snippet[ci:ci+1]):
-                        cum += len(_norm(snippet[ci:ci+1]))
-                abs_start = search_start + raw_idx
-                abs_end = abs_start + len(original)
-                rtl_text = rtl_text[:abs_start] + replacement + rtl_text[abs_end:]
-                applied += 1
-                continue
-
-        warnings.warn(
-            f"[patch_rtl] 블록 치환 실패 — 원본에서 해당 텍스트를 찾을 수 없음 "
-            f"(첫 40자: {original[:40]!r}). 원본 유지.",
-            stacklevel=2,
-        )
+        else:
+            warnings.warn(
+                f"[patch_rtl] 블록 치환 실패 — 원본에서 해당 텍스트를 찾을 수 없음 "
+                f"(첫 40자: {original[:40]!r}). 원본 유지.",
+                stacklevel=2,
+            )
 
     print(f"[patch_rtl] {applied}/{len(patches)} 블록 치환 완료")
     return rtl_text
