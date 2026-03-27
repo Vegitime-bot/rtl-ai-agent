@@ -213,17 +213,24 @@ def main() -> None:
     else:
         print("[flow] LSP context: skip (서버 없음 또는 응답 없음)")
 
-    findings = analyze(ma_chunks, "\n".join(pseudo_diff), model_cfg=model_cfg)
-    graph_notes = summarize_graphs(graph_data)
-    plan = build_plan(rtl_data.get("modules", []), [f.summary for f in findings], graph_notes, model_cfg=model_cfg)
+    # ── STAGE 1: spec_agent (독립) ─────────────────────────────────────────
+    # 입력: ma_chunks, pseudo_diff (자신의 입력만)
+    # 출력: build/findings.json
+    findings_path = build_dir / "findings.json"
+    findings = analyze(
+        ma_chunks, "\n".join(pseudo_diff),
+        model_cfg=model_cfg,
+        output_path=findings_path,
+    )
+    print(f"[flow] stage1 spec_agent → {findings_path} ({len(findings)} findings)")
 
-    # --- Neo4j graph context injection ---
+    # ── STAGE 2: Neo4j graph context (findings 요약만 사용) ───────────────
+    # findings.summary (짧은 텍스트)에서 신호명 추출 — RTL 원문 없음
+    graph_notes = summarize_graphs(graph_data)
     module_names = list({g.get("module") for g in graph_data.get("graphs", []) if g.get("module")})
     primary_module = module_names[0] if module_names else args.ip
-    raw_texts = [f.summary for f in findings] + [p.__dict__.get("action", "") for p in plan]
-    candidate_signals = _extract_signals(raw_texts)[:30]  # cap to 30 to avoid over-querying
+    candidate_signals = _extract_signals([f.summary for f in findings])[:30]
 
-    # 출력 포트 목록 추출 (2-hop 대상)
     output_ports: list[str] = []
     for mod in rtl_data.get("modules", []):
         output_ports += [p["name"] for p in mod.get("ports", []) if p.get("direction") == "output"]
@@ -237,25 +244,36 @@ def main() -> None:
         )
         if candidate_signals else ""
     )
+
+    # ── STAGE 3: plan_agent (독립) ─────────────────────────────────────────
+    # 입력: findings.json (요약 텍스트만) + rtl_ast (모듈/포트 메타)
+    # RTL 원문, algo 파일, graph raw data 등 포함하지 않음
+    plan_path = build_dir / "plan.json"
+    plan = build_plan(
+        rtl_data.get("modules", []),
+        [f.summary for f in findings],
+        graph_notes,
+        model_cfg=model_cfg,
+        output_path=plan_path,
+    )
+    print(f"[flow] stage2 plan_agent  → {plan_path} ({len(plan)} items)")
+
+    # ── STAGE 4: summary (독립, 선택적) ───────────────────────────────────
+    # findings.json + plan.json (요약 텍스트)만 사용. RTL/algo 원문 없음.
     llm_summary = None
     if model_cfg:
-        prompt = "Summarize the following findings and action plan:\n"
-        if lsp_ctx_text:
-            prompt = (
-                f"{lsp_ctx_text}\n\n"
-                + prompt
-            )
-        if graph_ctx_text:
-            prompt = (
-                "## Graph Context (from Neo4j)\n"
-                f"{graph_ctx_text}\n\n"
-                + prompt
-            )
-        prompt += json.dumps({
+        summary_input = json.dumps({
             "findings": [f.__dict__ for f in findings],
             "plan": [p.__dict__ for p in plan],
         }, indent=2)
-        llm_summary = call_llm(prompt, model_cfg, max_tokens=model_cfg.get("summary_max_tokens", 1024))
+        # graph/LSP 컨텍스트는 summary에 포함하지 않음 (codegen 전용)
+        llm_summary = call_llm(
+            f"Summarize the following RTL change findings and action plan in 3-5 sentences:\n{summary_input}",
+            model_cfg,
+            system_prompt="You are an RTL design assistant. Summarize concisely.",
+            max_tokens=model_cfg.get("summary_max_tokens", 1024),
+        )
+        print(f"[flow] stage3 summary     → done")
 
     verification = None
     if args.generate_rtl:
