@@ -125,7 +125,7 @@ def chunk_verilog(source: str) -> list[dict]:
     while pos < len(clean):
         # 다음 키워드 탐색
         m = re.search(
-            r'\b(localparam|reg|wire|integer|assign|always)\b',
+            r'\b(localparam|reg|wire|integer|assign|always|function)\b',
             clean[pos:]
         )
         if not m:
@@ -182,6 +182,28 @@ def chunk_verilog(source: str) -> list[dict]:
             text = source[abs_start:end]
             chunks.append({
                 'kind': 'always',
+                'signals': extract_identifiers(text),
+                'lhs': extract_lhs(text),
+                'text': text.strip(),
+                'line_start': line_of(source, abs_start),
+                'line_end': line_of(source, end),
+            })
+            pos = end
+
+        elif keyword == 'function':
+            # function ... endfunction 전체를 하나의 청크로
+            end_m2 = re.search(r'\bendfunction\b', clean[abs_start:])
+            if end_m2:
+                end = abs_start + end_m2.end()
+            else:
+                end = abs_start + 1
+            text = source[abs_start:end]
+            # function name 추출
+            fn_m = re.search(r'\bfunction\b\s+(?:automatic\s+)?(?:(?:logic|reg|wire|integer|signed|unsigned)\s*)?(?:\[[^\]]*\]\s*)?(\w+)', text)
+            fn_name = fn_m.group(1) if fn_m else ""
+            chunks.append({
+                'kind': 'function',
+                'name': fn_name,
                 'signals': extract_identifiers(text),
                 'lhs': extract_lhs(text),
                 'text': text.strip(),

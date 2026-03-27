@@ -48,6 +48,25 @@ def main() -> None:
         add_edges(module.get("procedural_assignments", []), "procedural")
         if module.get("assignments"):
             add_edges(module.get("assignments"), "inferred")
+
+        # function 내부 assignments → causal edge (kind: "function")
+        for func in module.get("functions", []):
+            fname = func.get("name", "")
+            for assign in func.get("assignments", []):
+                lhs = assign.get("lhs")
+                if not lhs:
+                    continue
+                sources = assign.get("rhs") or []
+                for source in sources:
+                    edges.append({
+                        "from": source,
+                        "to": lhs,
+                        "kind": "function",
+                        "function": fname,
+                    })
+            # function 자체를 호출하는 신호 노드로 등록
+            node_kinds[fname] = "function"
+
         graphs.append({
             "module": module.get("module"),
             "edges": edges,

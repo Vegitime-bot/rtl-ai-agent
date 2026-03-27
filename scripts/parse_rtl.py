@@ -14,7 +14,14 @@ import json
 import re
 from pathlib import Path
 
-IDENT_RE = re.compile(r"[A-Za-z_][\w$]*")
+IDENT_RE  = re.compile(r"[A-Za-z_][\w$]*")
+FUNC_RE   = re.compile(
+    r'\bfunction\b\s+'                           # function keyword
+    r'(?:automatic\s+)?'                         # optional automatic
+    r'(?:(?:logic|reg|wire|integer|signed|unsigned)\s*)?'  # optional return type
+    r'(?:\[[^\]]*\]\s*)?'                        # optional width
+    r'(\w+)'                                     # function name
+)
 PORT_RE   = re.compile(
     r"(input|output|inout)\s+"                          # direction
     r"(?:wire|reg|logic|signed|unsigned)?\s*"           # optional type (non-capturing)
@@ -105,6 +112,60 @@ def _strip_comments(text: str) -> str:
     return text
 
 
+def _parse_functions(body: str) -> list[dict]:
+    """
+    body 텍스트에서 function ... endfunction 블록을 추출.
+    반환: [{"name", "inputs", "outputs", "signals", "assignments"}]
+    """
+    funcs = []
+    i = 0
+    while True:
+        fm = re.search(r'\bfunction\b', body[i:])
+        if not fm:
+            break
+        abs_start = i + fm.start()
+        # function name
+        name_m = FUNC_RE.search(body[abs_start:abs_start + 200])
+        fname = name_m.group(1) if name_m else "unknown"
+
+        # find endfunction
+        end_m = re.search(r'\bendfunction\b', body[i + fm.end():])
+        if not end_m:
+            break
+        abs_end = i + fm.end() + end_m.end()
+        func_body = body[abs_start:abs_end]
+
+        # inputs/outputs inside function
+        inputs  = [m.group(1) for m in re.finditer(r'\binput\s+(?:\w+\s+)?(?:\[[^\]]*\]\s*)?(\w+)', func_body)]
+        outputs = [m.group(1) for m in re.finditer(r'\boutput\s+(?:\w+\s+)?(?:\[[^\]]*\]\s*)?(\w+)', func_body)]
+
+        # internal reg/wire/logic
+        sigs = []
+        for dtype, sname in DECL_RE.findall(func_body):
+            if sname != fname:  # function 이름 자체는 제외
+                sigs.append({"name": sname, "type": dtype})
+
+        # assignments inside function
+        assigns = []
+        for pfx, lhs, op, rhs in ASSIGN_RE.findall(func_body):
+            assigns.append({
+                "lhs": lhs,
+                "rhs": extract_tokens(rhs),
+                "kind": "assign" if pfx.strip() == "assign" else "always",
+            })
+
+        funcs.append({
+            "name": fname,
+            "inputs": inputs,
+            "outputs": outputs,
+            "signals": sigs,
+            "assignments": assigns,
+        })
+        i = abs_end
+
+    return funcs
+
+
 def parse_file(path: Path) -> list[dict]:
     raw  = path.read_text(encoding="utf-8", errors="replace")
     text = _strip_comments(raw)
@@ -139,12 +200,15 @@ def parse_file(path: Path) -> list[dict]:
                 "kind": "assign" if pfx.strip() == "assign" else "always",
             })
 
+        functions = _parse_functions(body)
+
         modules.append({
             "module": mod_name,
             "file": str(path),
             "ports": ports,
             "signals": signals,
             "assignments": assignments,
+            "functions": functions,
         })
 
     return modules
