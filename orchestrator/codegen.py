@@ -437,6 +437,116 @@ def _block_is_complete(block_text: str) -> bool:
     return begins > 0 and ends >= begins
 
 
+def _count_begin_end_depth(text: str) -> int:
+    """
+    텍스트에서 begin/end 깊이를 계산.
+    양수 = begin이 더 많음 (블록 미완성), 0 = 균형, 음수 = end 과잉
+    case/endcase, function/endfunction도 함께 처리.
+    """
+    depth = 0
+    # 주석 제거 후 검사
+    clean = re.sub(r"//[^\n]*", "", text)
+    clean = re.sub(r"/\*.*?\*/", " ", clean, flags=re.DOTALL)
+    for tok in re.findall(r"\b(\w+)\b", clean):
+        if tok in ("begin", "case", "casex", "casez", "function", "task"):
+            depth += 1
+        elif tok in ("end", "endcase", "endfunction", "endtask"):
+            depth -= 1
+    return depth
+
+
+def _collect_related_chunks(
+    block: dict,
+    all_chunks: list[dict],
+    block_idx: int,
+    causal_edges: list[dict],
+) -> list[dict]:
+    """
+    현재 블록과 관련된 추가 청크를 수집.
+
+    수집 기준:
+    1. begin/end 미완성 → next chunk(들) 자동 포함 (깊이가 0이 될 때까지)
+    2. 이 블록이 참조하는 신호의 decl/localparam 청크
+    3. causal graph 기준 1-hop 연관 신호를 lhs로 가진 다른 always/assign 청크
+    4. 같은 신호를 lhs로 가진 다른 always 청크 (다중 always 분리 패턴)
+
+    반환: 추가 컨텍스트로 포함할 청크 목록 (block 자신은 제외)
+    """
+    related: list[dict] = []
+    seen_ids: set[int] = {id(block)}
+
+    block_signals: set[str] = set(block.get("signals", []))
+    block_lhs: set[str] = set(block.get("lhs", []))
+
+    # ── 1. begin/end 완전성 검사 → next chunk 자동 포함 ──────────────────
+    accumulated_text = block.get("text", "")
+    depth = _count_begin_end_depth(accumulated_text)
+    next_idx = block_idx + 1
+    while depth > 0 and next_idx < len(all_chunks):
+        next_chunk = all_chunks[next_idx]
+        accumulated_text += "\n" + next_chunk.get("text", "")
+        depth = _count_begin_end_depth(accumulated_text)
+        if id(next_chunk) not in seen_ids:
+            related.append(next_chunk)
+            seen_ids.add(id(next_chunk))
+            print(f"    [related] begin/end 미완성 → next chunk 포함: "
+                  f"L{next_chunk.get('line_start')}-{next_chunk.get('line_end')} "
+                  f"kind={next_chunk.get('kind')}")
+        next_idx += 1
+        if next_idx - block_idx > 5:  # 최대 5개 청크까지만 추가
+            break
+
+    # ── 2. block 참조 신호의 decl/localparam 청크 ─────────────────────────
+    for chunk in all_chunks:
+        if id(chunk) in seen_ids:
+            continue
+        kind = chunk.get("kind", "")
+        if kind not in ("decl", "localparam"):
+            continue
+        chunk_signals: set[str] = set(chunk.get("signals", []))
+        if chunk_signals & block_signals:
+            related.append(chunk)
+            seen_ids.add(id(chunk))
+
+    # ── 3. causal 1-hop 연관 신호를 lhs로 가진 always/assign 청크 ──────────
+    # block_signals 기준으로 causal edge 확장
+    causal_related: set[str] = set()
+    for edge in causal_edges:
+        frm, to = edge.get("from", ""), edge.get("to", "")
+        if frm in block_signals or to in block_signals:
+            causal_related.add(frm)
+            causal_related.add(to)
+
+    for chunk in all_chunks:
+        if id(chunk) in seen_ids:
+            continue
+        if chunk.get("kind") not in ("always", "assign", "comb", "clocked"):
+            continue
+        chunk_lhs: set[str] = set(chunk.get("lhs", []))
+        if chunk_lhs & causal_related:
+            related.append(chunk)
+            seen_ids.add(id(chunk))
+            print(f"    [related] causal 연관 → chunk 포함: "
+                  f"L{chunk.get('line_start')}-{chunk.get('line_end')} "
+                  f"lhs={list(chunk_lhs)[:3]}")
+
+    # ── 4. 같은 lhs 신호를 가진 다른 always 청크 (분리 always 패턴) ─────────
+    for chunk in all_chunks:
+        if id(chunk) in seen_ids:
+            continue
+        if chunk.get("kind") not in ("always", "assign"):
+            continue
+        chunk_lhs2: set[str] = set(chunk.get("lhs", []))
+        if chunk_lhs2 & block_lhs:
+            related.append(chunk)
+            seen_ids.add(id(chunk))
+            print(f"    [related] 동일 lhs 신호 → chunk 포함: "
+                  f"L{chunk.get('line_start')}-{chunk.get('line_end')} "
+                  f"lhs={list(chunk_lhs2)[:3]}")
+
+    return related
+
+
 def _build_block_prompt(
     block_text: str,
     block_signals: list[str],
@@ -446,20 +556,25 @@ def _build_block_prompt(
     graph_ctx_text: str,
     pseudo_diff_text: str,
     cfg: dict,
+    related_chunks: list[dict] | None = None,
 ) -> str:
     """
     변경이 필요한 단일 블록에 대한 LLM 프롬프트 생성.
-    입력 토큰 예산: context_window - block_tokens - 500 마진
+    related_chunks: 연관 컨텍스트 청크 (decl, causal 연관 블록 등)
     """
     block_tokens = min(max(len(block_text) // 4 * 2 + 512, 1024), cfg.get("max_tokens", 8192))
-    # 블록 재작성용 입력 예산: 최대 6000토큰 하드캡 (블록 하나에 수십만 토큰 불필요)
+    # 블록 재작성용 입력 예산: 최대 6000토큰 하드캡
     input_budget = min(cfg.get("block_input_budget", 6000), 6000)
 
-    # 섹션별 토큰 배분: algo 50%, graph 20%, uarch 20%, diff 10%
-    algo_budget   = int(input_budget * 0.50)
-    graph_budget  = int(input_budget * 0.20)
-    uarch_budget  = int(input_budget * 0.20)
-    diff_budget   = int(input_budget * 0.10)
+    # related_chunks 토큰 예산 확보: 최대 15% 할당
+    related_budget = int(input_budget * 0.15) if related_chunks else 0
+    remaining = input_budget - related_budget
+
+    # 섹션별 토큰 배분: algo 50%, graph 18%, uarch 17%, diff 10%, related 15%
+    algo_budget   = int(remaining * 0.53)
+    graph_budget  = int(remaining * 0.19)
+    uarch_budget  = int(remaining * 0.18)
+    diff_budget   = int(remaining * 0.10)
 
     parts = [
         "Rewrite the following Verilog block based on the spec changes.",
@@ -468,6 +583,27 @@ def _build_block_prompt(
         "=== Original Block ===",
         block_text,
     ]
+
+    # 연관 컨텍스트 청크 (decl + causal 연관)
+    if related_chunks:
+        related_texts: list[str] = []
+        used_tokens = 0
+        per_chunk_max = max(related_budget // max(len(related_chunks), 1), 80)
+        for rc in related_chunks:
+            rc_text = rc.get("text", "")
+            rc_tokens = len(rc_text) // 4
+            if used_tokens + rc_tokens > related_budget:
+                rc_text = _truncate_to_tokens(rc_text, per_chunk_max)
+            related_texts.append(
+                f"// [{rc.get('kind','?')}] L{rc.get('line_start')}-{rc.get('line_end')}\n{rc_text}"
+            )
+            used_tokens += len(rc_text) // 4
+        parts += [
+            "",
+            "=== Related Context (declarations & connected blocks) ===",
+            "\n\n".join(related_texts),
+        ]
+
     if graph_ctx_text:
         parts += ["", "=== Signal Causal Context ===", _truncate_to_tokens(graph_ctx_text, graph_budget)]
     if pseudo_diff_text:
@@ -830,6 +966,9 @@ def generate_rtl_patch_mode(
 
     print(f"[codegen/patch] Step 1: logic block rewrite {len(target_blocks)}개 / 전체 {len(chunks)}개")
 
+    # chunks 전체 리스트에서 target_blocks의 인덱스 사전 구축
+    chunk_index_map: dict[int, int] = {id(c): idx for idx, c in enumerate(chunks)}
+
     for i, block in enumerate(target_blocks):
         if i > 0:
             _time.sleep(_req_interval)
@@ -841,6 +980,16 @@ def generate_rtl_patch_mode(
             cfg_max * 2,
         )
 
+        # 연관 청크 수집 (begin/end 완전성 + causal + 동일 lhs)
+        block_pos_in_chunks = chunk_index_map.get(id(block), 0)
+        related = _collect_related_chunks(block, chunks, block_pos_in_chunks, causal_edges)
+        if related:
+            related_summary = ", ".join(
+                "L{}-{}({})".format(c.get("line_start"), c.get("line_end"), c.get("kind"))
+                for c in related[:4]
+            )
+            print(f"  → related chunks {len(related)}개: {related_summary}")
+
         print(f"[codegen/patch] 블록 {i+1}/{len(target_blocks)}: "
               f"L{block.get('line_start')}-{block.get('line_end')} "
               f"signals={block_signals[:3]} (~{len(block_text)//4} tokens)")
@@ -849,6 +998,7 @@ def generate_rtl_patch_mode(
             block_text, block_signals,
             algo_origin, algo_new, uarch_new,
             graph_ctx_text, pseudo_diff_text, cfg,
+            related_chunks=related if related else None,
         )
 
         for attempt in range(max_retries + 1):
