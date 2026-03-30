@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import warnings
 from pathlib import Path
@@ -487,6 +488,162 @@ def _build_block_prompt(
     return "\n".join(parts)
 
 
+# diff_signals 중 RTL 신호가 아닌 Python/prose 식별자를 걸러내는 패턴
+_NON_RTL_SIGNAL_RE = re.compile(
+    r"^(algorithm|algorithm_new|algorithm_origin|origin|new|the|must|have|same|"
+    r"typing|py|src|src_x|out_frame|out_line|in_line|in_crop|avg|checksum|flat|"
+    r"frame|pix|row|rows|height|width|sat_mul2_u8|clip_u8|new_tcon_model|"
+    r"original_tcon_model|dim_active_list|line_avg|line_checksum|line_flat|p|v|x|y)$"
+)
+# RTL 신호명 heuristic: snake_case, 길이≥3, 숫자로 시작 안 함, 단일 알파벳 아님
+def _looks_like_rtl_signal(name: str) -> bool:
+    if len(name) <= 1:
+        return False
+    if _NON_RTL_SIGNAL_RE.match(name):
+        return False
+    # 순수 숫자나 단일 문자는 제외
+    if name.isdigit():
+        return False
+    return True
+
+
+def _extract_origin_signals(chunks: list[dict]) -> set[str]:
+    """
+    origin chunks에서 이미 선언된 신호 이름 집합을 추출.
+    header(port), decl(wire/reg), localparam 모두 포함.
+    """
+    known: set[str] = set()
+    port_re = re.compile(
+        r"(input|output|inout)\s+(?:wire|reg|logic|signed|unsigned)?\s*(?:\[[^\]]*\]\s*)?(\w+)"
+    )
+    decl_re = re.compile(r"\b(logic|wire|reg|integer)\s*(?:\[[^\]]*\])?\s*(\w+)")
+    param_re = re.compile(r"\b(parameter|localparam)\s+(\w+)")
+    for chunk in chunks:
+        text = chunk.get("text", "")
+        for _, name in port_re.findall(text):
+            known.add(name)
+        for _, name in decl_re.findall(text):
+            known.add(name)
+        for _, name in param_re.findall(text):
+            known.add(name)
+    return known
+
+
+def _build_header_patch_prompt(
+    header_text: str,
+    pseudo_diff_text: str,
+    uarch_new: Path | None,
+    algo_new: Path,
+    cfg: dict,
+) -> str:
+    """
+    모듈 header(port list) 재작성 프롬프트.
+    새 포트 추가만 수행하고 기존 포트는 그대로 유지.
+    """
+    input_budget = min(cfg.get("block_input_budget", 6000), 6000)
+    parts = [
+        "Rewrite the following Verilog module header (port list only).",
+        "ADD any new ports required by the spec delta. Keep ALL existing ports unchanged.",
+        "Return ONLY the rewritten header text (from 'module' up to and including ');'). No body, no markdown.",
+        "",
+        "=== Original Header ===",
+        header_text,
+    ]
+    if pseudo_diff_text:
+        parts += ["", "=== Spec Delta (pseudo-diff) ===",
+                  _truncate_to_tokens(pseudo_diff_text, int(input_budget * 0.15))]
+    if uarch_new and uarch_new.exists():
+        parts += ["", "=== Micro-architecture (new) ===",
+                  _truncate_to_tokens(uarch_new.read_text(), int(input_budget * 0.25))]
+    parts += [
+        "", "=== Algorithm (new) ===",
+        _truncate_to_tokens(_read_algo_sources(algo_new, "Algorithm new"), int(input_budget * 0.50)),
+        "",
+        "=== Requirements ===",
+        "- Keep all existing ports exactly as-is (name, direction, width).",
+        "- Add new input/output ports required by the spec.",
+        "- Match bit widths from the spec (e.g. [7:0] for 8-bit signals).",
+        "- Return only the header (module ... );  — no body, no endmodule.",
+    ]
+    return "\n".join(parts)
+
+
+def _build_decl_patch_prompt(
+    existing_decls: str,
+    new_signals_hint: list[str],
+    pseudo_diff_text: str,
+    uarch_new: Path | None,
+    algo_new: Path,
+    cfg: dict,
+) -> str:
+    """
+    내부 신호 선언(wire/reg) 추가 프롬프트.
+    new_signals_hint: spec에서 추론된 신규 신호 이름 목록
+    """
+    input_budget = min(cfg.get("block_input_budget", 6000), 6000)
+    parts = [
+        "Generate additional Verilog internal signal declarations (wire/reg) required by the spec.",
+        "Return ONLY the new declaration lines (one per line). Do NOT repeat existing declarations.",
+        "",
+        "=== Existing Declarations ===",
+        existing_decls,
+        "",
+        f"=== Likely New Signals (from spec) ===",
+        ", ".join(new_signals_hint) if new_signals_hint else "(derive from spec delta)",
+    ]
+    if pseudo_diff_text:
+        parts += ["", "=== Spec Delta (pseudo-diff) ===",
+                  _truncate_to_tokens(pseudo_diff_text, int(input_budget * 0.15))]
+    if uarch_new and uarch_new.exists():
+        parts += ["", "=== Micro-architecture (new) ===",
+                  _truncate_to_tokens(uarch_new.read_text(), int(input_budget * 0.25))]
+    parts += [
+        "", "=== Algorithm (new) ===",
+        _truncate_to_tokens(_read_algo_sources(algo_new, "Algorithm new"), int(input_budget * 0.45)),
+        "",
+        "=== Requirements ===",
+        "- Only output NEW declaration lines not already in existing declarations.",
+        "- Use wire/reg with correct bit widths from spec.",
+        "- One declaration per line, terminated with semicolon.",
+        "- No module wrapper, no markdown, no comments.",
+    ]
+    return "\n".join(parts)
+
+
+def _insert_decls_into_rtl(rtl_text: str, new_decl_text: str, header_end_marker: str = ");") -> str:
+    """
+    새 신호 선언을 RTL 텍스트의 header(');') 바로 뒤에 삽입.
+    """
+    new_lines = [l for l in new_decl_text.strip().splitlines() if l.strip()]
+    if not new_lines:
+        return rtl_text
+
+    # ');' 이후 첫 번째 빈 줄 또는 localparam/reg 선언 직전에 삽입
+    lines = rtl_text.splitlines(keepends=True)
+    insert_pos = None
+    in_header = False
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == ");":
+            in_header = False
+            insert_pos = idx + 1
+            break
+
+    if insert_pos is None:
+        # fallback: endmodule 바로 전에 삽입
+        for idx in range(len(lines) - 1, -1, -1):
+            if "endmodule" in lines[idx]:
+                insert_pos = idx
+                break
+
+    if insert_pos is None:
+        return rtl_text + "\n" + "\n".join(new_lines) + "\n"
+
+    insertion = "\n// [patch: new signal declarations]\n" + "\n".join(new_lines) + "\n"
+    lines.insert(insert_pos, insertion)
+    return "".join(lines)
+
+
 def generate_rtl_patch_mode(
     cfg: dict,
     origin_rtl_dir: Path,
@@ -503,11 +660,16 @@ def generate_rtl_patch_mode(
 ) -> tuple[str, dict]:
     """
     Patch Mode RTL 생성:
-    변경이 필요한 블록만 LLM으로 생성 후 원본 RTL에 병합.
+    1. [NEW] header(port list) 재작성 → 새 포트 추가
+    2. [NEW] decl(wire/reg) 보강 → 새 내부 신호 삽입
+    3. logic block(always/assign) rewrite → 파이프라인 로직 변경
+    4. apply_patch()로 원본에 병합
     rtl_chunks_path가 없으면 generate_rtl_with_retry()로 자동 fallback.
 
     반환: (최종 RTL 문자열, verification dict)
     """
+    import re as _re
+    import time as _time
     from verify import run_checks  # type: ignore
 
     # chunks 없으면 fallback
@@ -526,17 +688,26 @@ def generate_rtl_patch_mode(
         sys.path.insert(0, str(scripts_dir))
 
     from context_selector import select_chunks, extract_diff_signals  # type: ignore
-    from patch_rtl import find_block, apply_patch  # type: ignore
+    from patch_rtl import apply_patch  # type: ignore
 
     chunks = json.loads(rtl_chunks_path.read_text())
 
     # diff signals 추출
-    diff_signals: set[str] = set()
+    raw_diff_signals: set[str] = set()
     pseudo_diff_text = ""
     if pseudo_diff_path and pseudo_diff_path.exists():
         diff_obj = json.loads(pseudo_diff_path.read_text())
-        diff_signals = extract_diff_signals(diff_obj.get("diff", []))
+        raw_diff_signals = extract_diff_signals(diff_obj.get("diff", []))
         pseudo_diff_text = "\n".join(diff_obj.get("diff", []))
+
+    # origin에 이미 있는 신호를 제외 + RTL 식별자 heuristic 필터 → 진짜 신규 신호만 남김
+    origin_known_signals = _extract_origin_signals(chunks)
+    diff_signals = {s for s in (raw_diff_signals - origin_known_signals)
+                    if _looks_like_rtl_signal(s)}
+    new_signals_hint = sorted(diff_signals)
+
+    print(f"[codegen/patch] raw diff_signals={len(raw_diff_signals)}, "
+          f"after filtering origin={len(diff_signals)}: {new_signals_hint[:8]}")
 
     # causal edges
     causal_edges: list[dict] = []
@@ -544,56 +715,127 @@ def generate_rtl_patch_mode(
         graph_obj = json.loads(causal_graph_path.read_text())
         causal_edges = graph_obj.get("graphs", [{}])[0].get("edges", [])
 
-    # 변경 필요 블록 선택
-    # diff_signals가 있으면 해당 신호 관련 블록만, 없으면 always/assign 전체 대상
+    # 원본 RTL 읽기
+    origin_rtl_text = _read_rtl_sources(origin_rtl_dir)
+    _req_interval = cfg.get("req_interval", 1.0)
+    cfg_max = cfg.get("max_tokens", 8192)
+
+    patches: list[dict] = []
+
+    # ─────────────────────────────────────────────────────
+    # Step 0: header(port list) 재작성 → 새 포트 추가
+    # ─────────────────────────────────────────────────────
+    header_chunks = [c for c in chunks if c.get("kind") == "header"]
+    if header_chunks:
+        header_chunk = header_chunks[0]
+        header_text = header_chunk.get("text", "")
+        print("[codegen/patch] Step 0: header(port list) 재작성")
+        header_prompt = _build_header_patch_prompt(
+            header_text, pseudo_diff_text, uarch_new, algo_new, cfg
+        )
+        try:
+            header_result = call_llm(
+                header_prompt, cfg,
+                system_prompt=(
+                    "You are an RTL engineer updating a Verilog module header. "
+                    "Add new ports from the spec. Keep existing ports unchanged. "
+                    "Return only the header (module...); — no body, no endmodule, no markdown."
+                ),
+                max_tokens=min(cfg_max, max(len(header_text) // 4 * 3 + 512, 1024)),
+            )
+            if header_result:
+                header_result = header_result.replace("```verilog", "").replace("```", "").strip()
+                # header가 ');'로 끝나는지 확인
+                if ");" in header_result:
+                    patches.append({
+                        "original": header_text,
+                        "replacement": header_result,
+                        "chunk": header_chunk,
+                    })
+                    print(f"[codegen/patch] header patch 준비 완료 "
+                          f"({len(header_text.splitlines())}→{len(header_result.splitlines())} lines)")
+                else:
+                    warnings.warn("[codegen/patch] header 결과가 ');'로 끝나지 않음 — 원본 유지", stacklevel=2)
+        except Exception as exc:
+            warnings.warn(f"[codegen/patch] header 재작성 실패: {exc} — 원본 유지", stacklevel=2)
+        _time.sleep(_req_interval)
+    else:
+        warnings.warn("[codegen/patch] header chunk 없음 — 포트 추가 스킵", stacklevel=2)
+
+    # ─────────────────────────────────────────────────────
+    # Step 0.5: 새 내부 신호 선언(decl) 추가
+    # ─────────────────────────────────────────────────────
+    if new_signals_hint:
+        decl_chunks = [c for c in chunks if c.get("kind") == "decl"]
+        existing_decls = "\n".join(c.get("text", "") for c in decl_chunks)
+        print(f"[codegen/patch] Step 0.5: 신규 내부 신호 선언 추가 (hints: {new_signals_hint[:6]})")
+        decl_prompt = _build_decl_patch_prompt(
+            existing_decls, new_signals_hint, pseudo_diff_text, uarch_new, algo_new, cfg
+        )
+        try:
+            decl_result = call_llm(
+                decl_prompt, cfg,
+                system_prompt=(
+                    "You are an RTL engineer. Generate ONLY new wire/reg declaration lines "
+                    "that are missing from the existing declarations. "
+                    "Return one declaration per line. No module, no markdown."
+                ),
+                max_tokens=min(cfg_max, 512),
+            )
+            if decl_result:
+                decl_result = decl_result.replace("```verilog", "").replace("```", "").strip()
+                # 빈 결과 또는 "none" 류 응답 필터
+                decl_lines = [l for l in decl_result.splitlines()
+                               if l.strip() and "none" not in l.lower()
+                               and not l.strip().startswith("//")]
+                if decl_lines:
+                    print(f"[codegen/patch] 추가 선언 {len(decl_lines)}개: {decl_lines[:3]}")
+                    # patch list에 직접 넣지 않고 RTL text에 삽입 (insert_pos 기반)
+                    # apply_patch() 이후에 적용하기 위해 별도 보관
+                    _new_decl_lines = "\n".join(decl_lines)
+                else:
+                    _new_decl_lines = ""
+                    print("[codegen/patch] 추가 선언 없음 (LLM이 불필요 판단)")
+            else:
+                _new_decl_lines = ""
+        except Exception as exc:
+            warnings.warn(f"[codegen/patch] 신호 선언 추가 실패: {exc}", stacklevel=2)
+            _new_decl_lines = ""
+        _time.sleep(_req_interval)
+    else:
+        _new_decl_lines = ""
+        print("[codegen/patch] Step 0.5: 신규 신호 없음 — 선언 추가 스킵")
+
+    # ─────────────────────────────────────────────────────
+    # Step 1: logic block(always/assign) rewrite
+    # 변경 대상: diff_signals(신규) + origin에 있지만 로직 변경이 필요한 신호
+    # ─────────────────────────────────────────────────────
     all_logic_blocks = [
         c for c in chunks
         if c.get("kind") in ("always", "assign", "comb", "clocked")
     ]
 
-    if diff_signals:
-        target_blocks = [
-            c for c in all_logic_blocks
-            if set(c.get("signals", [])) & diff_signals or set(c.get("lhs", [])) & diff_signals
-        ]
-        if not target_blocks:
-            # diff_signals 있지만 매칭 없으면 전체 로직 블록 대상
-            warnings.warn("[codegen/patch] diff_signals 매칭 없음 → 전체 로직 블록 대상으로 확장", stacklevel=2)
-            target_blocks = all_logic_blocks
-    else:
-        # diff_signals 없으면 전체 로직 블록 대상
-        warnings.warn("[codegen/patch] diff_signals 비어있음 → 전체 로직 블록 대상", stacklevel=2)
+    # 신규 신호 관련 블록 + spec 변경으로 로직이 바뀌어야 하는 블록 선정
+    # "spec 변경 영향권" = raw_diff_signals (필터 전) 기반으로 넓게 잡음
+    target_blocks = [
+        c for c in all_logic_blocks
+        if set(c.get("signals", [])) & raw_diff_signals
+        or set(c.get("lhs", [])) & raw_diff_signals
+        or set(c.get("signals", [])) & diff_signals
+        or set(c.get("lhs", [])) & diff_signals
+    ]
+    if not target_blocks:
+        warnings.warn("[codegen/patch] diff_signals 매칭 없음 → 전체 로직 블록 대상으로 확장", stacklevel=2)
         target_blocks = all_logic_blocks
 
-    if not target_blocks:
-        warnings.warn("[codegen/patch] 로직 블록 없음 → 일반 모드로 fallback", stacklevel=2)
-        return generate_rtl_with_retry(
-            cfg, origin_rtl_dir, uarch_origin, uarch_new, algo_origin, algo_new,
-            output, causal_graph_path=causal_graph_path,
-            rtl_chunks_path=rtl_chunks_path, pseudo_diff_path=pseudo_diff_path,
-            graph_ctx_text=graph_ctx_text,
-        )
+    print(f"[codegen/patch] Step 1: logic block rewrite {len(target_blocks)}개 / 전체 {len(chunks)}개")
 
-    print(f"[codegen/patch] 변경 대상 블록: {len(target_blocks)}개 / 전체 {len(chunks)}개")
-
-    # 원본 RTL 읽기
-    origin_rtl_text = _read_rtl_sources(origin_rtl_dir)
-
-    import time as _time
-    # 블록 간 최소 대기 간격 (초) — rate limit 방지. yaml에 req_interval로 override 가능
-    _req_interval = cfg.get("req_interval", 1.0)
-
-    patches: list[dict] = []
     for i, block in enumerate(target_blocks):
         if i > 0:
             _time.sleep(_req_interval)
 
         block_text = block.get("text", "")
         block_signals = list(set(block.get("signals", [])) | set(block.get("lhs", [])))
-        # 출력 토큰: 원본 블록의 3배 + 여유 512, 최소 cfg max_tokens(yaml 설정값 전체 활용)
-        # - 2048 하드캡 제거: 재작성 블록이 원본보다 크면 finish_reason=length 발생하기 때문
-        # - cfg["max_tokens"] 전체를 기본값으로 사용하되, 블록이 매우 크면 2배까지 허용
-        cfg_max = cfg.get("max_tokens", 8192)
         block_tokens = min(
             max(len(block_text) // 4 * 3 + 512, cfg_max),
             cfg_max * 2,
@@ -621,7 +863,7 @@ def generate_rtl_patch_mode(
                     raise ValueError("LLM returned empty/None response")
                 result = result.replace("```verilog", "").replace("```", "").strip()
 
-                # finish_reason=length 대응: end 키워드 없으면 continuation
+                # finish_reason=length 대응
                 cont_attempts = 0
                 while cont_attempts < 3 and result and not _block_is_complete(result):
                     cont_prompt = (
@@ -647,13 +889,21 @@ def generate_rtl_patch_mode(
                 else:
                     warnings.warn(f"[codegen/patch] 블록 {i+1} 실패, 원본 유지: {exc}", stacklevel=2)
 
-    # 원본에 패치 적용
+    # ─────────────────────────────────────────────────────
+    # Step 2: 패치 적용
+    # ─────────────────────────────────────────────────────
     patched_rtl = apply_patch(origin_rtl_text, patches)
+
+    # Step 2.5: 새 내부 신호 선언 삽입 (header ');' 직후)
+    if _new_decl_lines:
+        patched_rtl = _insert_decls_into_rtl(patched_rtl, _new_decl_lines)
+        print(f"[codegen/patch] 내부 신호 선언 삽입 완료")
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(patched_rtl)
 
-    verification = run_checks(output, causal_graph_path=causal_graph_path, causal_threshold=cfg.get("verify_causal_threshold", 0.5))
+    verification = run_checks(output, causal_graph_path=causal_graph_path,
+                              causal_threshold=cfg.get("verify_causal_threshold", 0.5))
     print(f"[codegen/patch] 검증 결과: {verification['status']}")
 
     return patched_rtl, verification
