@@ -4,6 +4,9 @@ endpoint: http://사내망주소/v1   # ← 실제 주소로 교체
 model: GLM4.7
 
 max_tokens: 65536   # spec/plan/summary 공용 + codegen용 (codegen은 별도 output_max_tokens로 override 가능)
+# patch mode 전용 출력 토큰 상한 (미설정 시 원본 크기 기반 자동 계산)
+# patch_header_max_tokens: 2048   # header(port list) 재작성 출력 토큰
+# patch_decl_max_tokens: 512      # 신호 선언 추가 출력 토큰
 
 context_window: 202752
 temperature: 0.2

@@ -858,6 +858,51 @@ def generate_rtl_patch_mode(
 
     patches: list[dict] = []
 
+    # header/decl 전용 출력 토큰 상한:
+    #   yaml에 patch_header_max_tokens / patch_decl_max_tokens 으로 override 가능.
+    #   기본값은 원본 header 토큰의 2배+512 (최소 1024), decl은 256+신호당 30토큰.
+    #   cfg_max에 종속되지 않도록 별도 변수로 관리한다.
+    def _header_out_tokens(header_text: str) -> int:
+        base = max(len(header_text) // 4 * 2 + 512, 1024)
+        return cfg.get("patch_header_max_tokens", base)
+
+    def _decl_out_tokens(n_signals: int) -> int:
+        base = max(256 + n_signals * 40, 512)
+        return cfg.get("patch_decl_max_tokens", base)
+
+    def _llm_with_continuation(
+        prompt: str,
+        system: str,
+        max_tok: int,
+        is_complete_fn,
+        label: str = "output",
+    ) -> str:
+        """
+        LLM 호출 후 finish_reason=length 대응:
+        is_complete_fn(text) → True 이면 완성으로 판단, False 이면 continuation.
+        최대 3회 이어받기.
+        """
+        result = call_llm(prompt, cfg, system_prompt=system, max_tokens=max_tok)
+        if not result:
+            return ""
+        result = result.replace("```verilog", "").replace("```", "").strip()
+
+        cont_attempts = 0
+        while cont_attempts < 3 and not is_complete_fn(result):
+            print(f"[codegen/patch] {label}: 출력 잘림 감지, continuation #{cont_attempts + 1}")
+            cont_prompt = (
+                "Continue the following Verilog code exactly where it stopped. "
+                "Do not repeat prior lines. Return only the missing part.\n"
+                f"=== Partial Output ===\n{result}\n=== Continue ==="
+            )
+            extra = call_llm(cont_prompt, cfg,
+                             system_prompt="You complete partially-written Verilog. Return code only.",
+                             max_tokens=max_tok)
+            if extra:
+                result = result + "\n" + extra.replace("```verilog", "").replace("```", "").strip()
+            cont_attempts += 1
+        return result
+
     # ─────────────────────────────────────────────────────
     # Step 0: header(port list) 재작성 → 새 포트 추가
     # ─────────────────────────────────────────────────────
@@ -865,23 +910,24 @@ def generate_rtl_patch_mode(
     if header_chunks:
         header_chunk = header_chunks[0]
         header_text = header_chunk.get("text", "")
-        print("[codegen/patch] Step 0: header(port list) 재작성")
+        h_out_tok = _header_out_tokens(header_text)
+        print(f"[codegen/patch] Step 0: header(port list) 재작성 (max_tokens={h_out_tok})")
         header_prompt = _build_header_patch_prompt(
             header_text, pseudo_diff_text, uarch_new, algo_new, cfg
         )
         try:
-            header_result = call_llm(
-                header_prompt, cfg,
-                system_prompt=(
+            header_result = _llm_with_continuation(
+                header_prompt,
+                system=(
                     "You are an RTL engineer updating a Verilog module header. "
                     "Add new ports from the spec. Keep existing ports unchanged. "
                     "Return only the header (module...); — no body, no endmodule, no markdown."
                 ),
-                max_tokens=min(cfg_max, max(len(header_text) // 4 * 3 + 512, 1024)),
+                max_tok=h_out_tok,
+                is_complete_fn=lambda t: ");" in t,
+                label="header",
             )
             if header_result:
-                header_result = header_result.replace("```verilog", "").replace("```", "").strip()
-                # header가 ');'로 끝나는지 확인
                 if ");" in header_result:
                     patches.append({
                         "original": header_text,
@@ -904,30 +950,36 @@ def generate_rtl_patch_mode(
     if new_signals_hint:
         decl_chunks = [c for c in chunks if c.get("kind") == "decl"]
         existing_decls = "\n".join(c.get("text", "") for c in decl_chunks)
-        print(f"[codegen/patch] Step 0.5: 신규 내부 신호 선언 추가 (hints: {new_signals_hint[:6]})")
+        d_out_tok = _decl_out_tokens(len(new_signals_hint))
+        print(f"[codegen/patch] Step 0.5: 신규 내부 신호 선언 추가 "
+              f"(hints: {new_signals_hint[:6]}, max_tokens={d_out_tok})")
         decl_prompt = _build_decl_patch_prompt(
             existing_decls, new_signals_hint, pseudo_diff_text, uarch_new, algo_new, cfg
         )
         try:
-            decl_result = call_llm(
-                decl_prompt, cfg,
-                system_prompt=(
+            # decl 완성 조건: 마지막 줄이 ';'로 끝나면 완성으로 판단
+            def _decl_complete(t: str) -> bool:
+                lines = [l.strip() for l in t.splitlines() if l.strip()]
+                return bool(lines) and lines[-1].endswith(";")
+
+            decl_result = _llm_with_continuation(
+                decl_prompt,
+                system=(
                     "You are an RTL engineer. Generate ONLY new wire/reg declaration lines "
                     "that are missing from the existing declarations. "
-                    "Return one declaration per line. No module, no markdown."
+                    "Return one declaration per line, each ending with ';'. No module, no markdown."
                 ),
-                max_tokens=min(cfg_max, 512),
+                max_tok=d_out_tok,
+                is_complete_fn=_decl_complete,
+                label="decl",
             )
             if decl_result:
-                decl_result = decl_result.replace("```verilog", "").replace("```", "").strip()
                 # 빈 결과 또는 "none" 류 응답 필터
                 decl_lines = [l for l in decl_result.splitlines()
                                if l.strip() and "none" not in l.lower()
                                and not l.strip().startswith("//")]
                 if decl_lines:
                     print(f"[codegen/patch] 추가 선언 {len(decl_lines)}개: {decl_lines[:3]}")
-                    # patch list에 직접 넣지 않고 RTL text에 삽입 (insert_pos 기반)
-                    # apply_patch() 이후에 적용하기 위해 별도 보관
                     _new_decl_lines = "\n".join(decl_lines)
                 else:
                     _new_decl_lines = ""
