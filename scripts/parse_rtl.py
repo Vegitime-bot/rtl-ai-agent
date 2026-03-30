@@ -30,10 +30,15 @@ PORT_RE   = re.compile(
 )
 DECL_RE   = re.compile(r"\b(logic|wire|reg)\s*(?:\[[^\]]*\])?\s*(\w+)")
 ASSIGN_RE = re.compile(r"(assign\s+)?(\w+)\s*(?:\[[^\]]*\])?\s*(<=|=)\s*([^;]+);")
+GENVAR_RE = re.compile(r"\bgenvar\s+([\w\s,]+);")          # genvar i, j;
+GENERATE_BLOCK_RE = re.compile(
+    r"\bgenerate\b(.*?)\bendgenerate\b", re.DOTALL
+)
 RESERVED  = {
     "if", "else", "begin", "end", "posedge", "negedge",
     "module", "assign", "always", "input", "output", "inout",
-    "wire", "reg", "logic",
+    "wire", "reg", "logic", "genvar", "generate", "endgenerate",
+    "for", "case", "endcase", "default",
 }
 
 
@@ -118,6 +123,57 @@ def _strip_comments(text: str) -> str:
     # line comments
     text = re.sub(r'//[^\n]*', ' ', text)
     return text
+
+
+def _parse_generate_blocks(body: str) -> list[dict]:
+    """
+    body 텍스트에서 generate ... endgenerate 블록을 추출.
+    각 블록 안의 genvar, 내부 신호 선언, 어사인먼트를 파싱.
+    반환: [{"genvar": [...], "signals": [...], "assignments": [...], "raw": str}]
+    """
+    blocks = []
+    for m in GENERATE_BLOCK_RE.finditer(body):
+        gen_body = m.group(1)
+
+        # genvar 이름 수집
+        genvars: list[str] = []
+        for gm in GENVAR_RE.finditer(gen_body):
+            names = [n.strip() for n in gm.group(1).split(",") if n.strip()]
+            genvars.extend(names)
+
+        # generate 블록 내부 wire/reg/logic 선언
+        sigs = [
+            {"name": sname, "type": dtype}
+            for dtype, sname in DECL_RE.findall(gen_body)
+        ]
+
+        # generate 블록 내부 어사인먼트
+        assigns = []
+        for pfx, lhs, op, rhs in ASSIGN_RE.findall(gen_body):
+            assigns.append({
+                "lhs": lhs,
+                "rhs": extract_tokens(rhs),
+                "kind": "assign" if pfx.strip() == "assign" else "always",
+            })
+
+        blocks.append({
+            "genvar": genvars,
+            "signals": sigs,
+            "assignments": assigns,
+            "raw": gen_body.strip(),
+        })
+    return blocks
+
+
+def _parse_genvars_toplevel(body: str) -> list[str]:
+    """generate 블록 밖에서 선언된 genvar 도 수집 (genvar i; 형태)."""
+    # generate 블록을 공백으로 치환하여 중복 방지
+    cleaned = GENERATE_BLOCK_RE.sub(" ", body)
+    genvars: list[str] = []
+    for gm in GENVAR_RE.finditer(cleaned):
+        names = [n.strip() for n in gm.group(1).split(",") if n.strip()]
+        genvars.extend(names)
+    return genvars
 
 
 def _parse_functions(body: str) -> list[dict]:
@@ -209,6 +265,8 @@ def parse_file(path: Path) -> list[dict]:
             })
 
         functions = _parse_functions(body)
+        generate_blocks = _parse_generate_blocks(body)
+        genvars = _parse_genvars_toplevel(body)
 
         modules.append({
             "module": mod_name,
@@ -217,30 +275,110 @@ def parse_file(path: Path) -> list[dict]:
             "signals": signals,
             "assignments": assignments,
             "functions": functions,
+            "genvars": genvars,
+            "generate_blocks": generate_blocks,
         })
 
     return modules
 
 
+def diff_signals(origin_modules: list[dict], new_modules: list[dict]) -> dict:
+    """
+    두 파싱 결과(origin / new)를 비교하여 새로 추가된 신호를 반환.
+
+    반환 예시:
+    {
+      "MyModule": {
+        "added_ports":   [{"direction":"output","name":"out_new","width":"[7:0]"}],
+        "added_signals": [{"name":"tmp_wire","type":"wire"}],
+      }
+    }
+    """
+
+    def _index(modules: list[dict]) -> dict[str, dict]:
+        return {m["module"]: m for m in modules}
+
+    origin_idx = _index(origin_modules)
+    new_idx = _index(new_modules)
+
+    result: dict[str, dict] = {}
+
+    for mod_name, new_mod in new_idx.items():
+        origin_mod = origin_idx.get(mod_name, {})
+
+        # ── 포트 비교 (input / output / inout) ─────────────────────────────
+        origin_port_names: set[str] = {p["name"] for p in origin_mod.get("ports", [])}
+        added_ports = [
+            p for p in new_mod.get("ports", [])
+            if p["name"] not in origin_port_names
+        ]
+
+        # ── 내부 신호 비교 (wire / reg / logic) ────────────────────────────
+        origin_sig_names: set[str] = {s["name"] for s in origin_mod.get("signals", [])}
+        # generate 블록 내부 신호도 포함
+        for gb in origin_mod.get("generate_blocks", []):
+            origin_sig_names.update(s["name"] for s in gb.get("signals", []))
+
+        new_sigs = list(new_mod.get("signals", []))
+        for gb in new_mod.get("generate_blocks", []):
+            new_sigs.extend(gb.get("signals", []))
+
+        added_signals = [s for s in new_sigs if s["name"] not in origin_sig_names]
+
+        # ── genvar 비교 ────────────────────────────────────────────────────
+        origin_genvars: set[str] = set(origin_mod.get("genvars", []))
+        for gb in origin_mod.get("generate_blocks", []):
+            origin_genvars.update(gb.get("genvar", []))
+
+        new_genvars: list[str] = list(new_mod.get("genvars", []))
+        for gb in new_mod.get("generate_blocks", []):
+            new_genvars.extend(gb.get("genvar", []))
+
+        added_genvars = [g for g in new_genvars if g not in origin_genvars]
+
+        if added_ports or added_signals or added_genvars:
+            result[mod_name] = {
+                "added_ports": added_ports,
+                "added_signals": added_signals,
+                "added_genvars": added_genvars,
+            }
+
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("rtl_dir", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("rtl_dir", type=Path,
+                        help="RTL 파일 또는 디렉토리 (origin 또는 단일 모드)")
+    parser.add_argument("output", type=Path,
+                        help="출력 JSON 경로")
+    parser.add_argument("--diff", type=Path, default=None,
+                        help="비교할 new RTL 파일/디렉토리. 지정 시 rtl_dir=origin으로 diff 수행")
     args = parser.parse_args()
 
-    data: list[dict] = []
-    rtl_dir = args.rtl_dir
-    if rtl_dir.is_file():
-        files = [rtl_dir]
+    def _collect(rtl_path: Path) -> list[dict]:
+        data: list[dict] = []
+        if rtl_path.is_file():
+            files = [rtl_path]
+        else:
+            files = sorted(list(rtl_path.glob("*.sv")) + list(rtl_path.glob("*.v")))
+        for path in files:
+            data.extend(parse_file(path))
+        return data
+
+    if args.diff:
+        # diff 모드: origin vs new → added_signals / added_ports 리포트
+        origin_data = _collect(args.rtl_dir)
+        new_data = _collect(args.diff)
+        diff_result = diff_signals(origin_data, new_data)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(diff_result, indent=2, ensure_ascii=False))
+        print(f"[parse_rtl] diff → {args.output}")
     else:
-        files = sorted(list(rtl_dir.glob("*.sv")) + list(rtl_dir.glob("*.v")))
-
-    for path in files:
-        data.extend(parse_file(path))
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({"modules": data}, indent=2))
-    print(f"[parse_rtl] Wrote {len(data)} modules -> {args.output}")
+        data = _collect(args.rtl_dir)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps({"modules": data}, indent=2))
+        print(f"[parse_rtl] Wrote {len(data)} modules -> {args.output}")
 
 
 if __name__ == "__main__":
